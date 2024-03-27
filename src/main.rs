@@ -1,7 +1,6 @@
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
-    str::FromStr,
 };
 
 use anyhow::Context;
@@ -14,45 +13,23 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                println!("accepted new connection");
-                let mut reader = BufReader::new(&stream);
-                let command = read_command(&mut reader)?;
-                match command.as_str() {
-                    "ping" | "PING" => {
-                        stream
-                            .write_all(format!("+PONG{LINE_ENDING}").as_bytes())
-                            .unwrap();
-                    }
-                    _ => {
-                        stream
-                            .write_all(format!("-ERR unknown command{LINE_ENDING}").as_bytes())
-                            .unwrap();
-                    }
-                }
-            }
-            Err(e) => {
-                println!("error: {}", e);
-            }
-        }
+        let stream = stream.context("Error while accepting connection")?;
+        parse_tcp_stream(stream).context("Unable to parse tcp stream")?;
     }
     Ok(())
 }
 
-fn read_command(reader: &mut BufReader<&TcpStream>) -> anyhow::Result<String> {
-    let mut line = String::new();
-    // force read third line for now
-    reader
-        .read_line(&mut line)
-        .context("Unable to read command from stream")?;
-    line.clear();
-    reader
-        .read_line(&mut line)
-        .context("Unable to read command from stream")?;
-    line.clear();
-    reader
-        .read_line(&mut line)
-        .context("Unable to read command from stream")?;
-    Ok(line[0..line.len() - LINE_ENDING.len()].to_string())
+fn parse_tcp_stream(mut stream: TcpStream) -> anyhow::Result<()> {
+    println!("accepted new connection");
+    let mut buf = [0; 512];
+    loop {
+        let read_count = stream.read(&mut buf)?;
+        if read_count == 0 {
+            break;
+        }
+        stream
+            .write_all(format!("+PONG{LINE_ENDING}").as_bytes())
+            .unwrap();
+    }
+    Ok(())
 }
