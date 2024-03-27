@@ -13,8 +13,14 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     for stream in listener.incoming() {
-        let stream = stream.context("Error while accepting connection")?;
-        parse_tcp_stream(stream).context("Unable to parse tcp stream")?;
+        std::thread::spawn(move || {
+            let stream = stream.unwrap();
+            parse_tcp_stream(stream)
+                .context("Unable to parse tcp stream")
+                .unwrap();
+        });
+        // let stream = stream.context("Error while accepting connection")?;
+        // parse_tcp_stream(stream).context("Unable to parse tcp stream")?;
     }
     Ok(())
 }
