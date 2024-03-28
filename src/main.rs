@@ -1,11 +1,15 @@
+use crate::command::Command;
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::Write,
     net::{TcpListener, TcpStream},
 };
 
 use anyhow::Context;
+pub(crate) mod command;
+pub(crate) mod resp_parser;
 
-const LINE_ENDING: &str = "\r\n";
+pub const LINE_ENDING: &str = "\r\n";
+pub const NEW_LINE: u8 = b'\n';
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -13,29 +17,35 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     for stream in listener.incoming() {
+        // TODO: Implement event loop like redis??
         std::thread::spawn(move || {
             let stream = stream.unwrap();
             parse_tcp_stream(stream)
                 .context("Unable to parse tcp stream")
                 .unwrap();
         });
-        // let stream = stream.context("Error while accepting connection")?;
-        // parse_tcp_stream(stream).context("Unable to parse tcp stream")?;
     }
     Ok(())
 }
 
 fn parse_tcp_stream(mut stream: TcpStream) -> anyhow::Result<()> {
-    println!("accepted new connection");
-    let mut buf = [0; 512];
     loop {
-        let read_count = stream.read(&mut buf)?;
-        if read_count == 0 {
+        let mut reader = std::io::BufReader::new(&stream);
+        if let Ok(command) = Command::parse_with_reader(&mut reader) {
+            let msg = match command {
+                Command::Ping(_) => {
+                    format!("+PONG{LINE_ENDING}")
+                }
+                Command::Echo(value) => {
+                    format!("+{value}{LINE_ENDING}")
+                }
+            };
+            stream
+                .write_all(msg.as_bytes())
+                .context("Unable to write to TcpStream")?;
+        } else {
             break;
         }
-        stream
-            .write_all(format!("+PONG{LINE_ENDING}").as_bytes())
-            .unwrap();
     }
     Ok(())
 }
