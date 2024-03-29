@@ -3,13 +3,17 @@ use std::{
     collections::HashMap,
     io::Write,
     net::TcpStream,
-    os::unix::process,
     sync::{Arc, RwLock},
     time::Duration,
 };
 
-use crate::LINE_ENDING;
-use crate::{cli_args::CliArgs, command::Command, resp_parser::DataType, store::Store};
+use crate::{
+    cli_args::CliArgs,
+    command::Command,
+    resp_parser::DataType,
+    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPL_OFFSET},
+};
+use crate::{store::KEY_MASTER_REPLID, LINE_ENDING};
 
 pub fn parse_tcp_stream(
     mut stream: TcpStream,
@@ -34,7 +38,7 @@ pub fn parse_tcp_stream(
             Command::Get(key) => process_get_cmd(&shared_map, key)?,
             Command::Info(_) => process_info_cmd(&shared_map, &cmd_args),
             Command::ReplConf(_, _) => DataType::SimpleString("OK".to_string()),
-            Command::PSync(_, _) => DataType::SimpleString("FULLSYNC <REPL_ID>".to_string()),
+            Command::PSync(_, _) => process_psync_cmd(&shared_map)?,
             Command::Noop => {
                 // Do nothing
                 break;
@@ -51,6 +55,20 @@ pub fn parse_tcp_stream(
     Ok(())
 }
 
+fn process_psync_cmd(shared_map: &Arc<RwLock<Store>>) -> anyhow::Result<DataType> {
+    let mut map = shared_map.write().unwrap();
+    map.get(KEY_IS_MASTER.into())
+        .ok_or_else(|| anyhow!("Not a master"))?;
+    let master_replid = map
+        .get(KEY_MASTER_REPLID.into())
+        .ok_or_else(|| anyhow!("No master replid found"))?;
+    let master_repl_offset = map.get(KEY_MASTER_REPL_OFFSET.into()).unwrap_or("0".into());
+    Ok(DataType::SimpleString(format!(
+        "FULLSYNC {} {}",
+        master_replid, master_repl_offset
+    )))
+}
+
 fn process_info_cmd(
     shared_map: &Arc<RwLock<Store>>,
     cmd_args: &Arc<HashMap<String, CliArgs>>,
@@ -62,9 +80,10 @@ fn process_info_cmd(
     ];
     if !is_replica {
         let mut map = shared_map.write().unwrap();
-        let master_replid = map.get("__$$__master_replid".to_string()).unwrap();
+        let master_replid = map.get(KEY_MASTER_REPLID.into()).unwrap();
+        let master_repl_offset = map.get(KEY_MASTER_REPL_OFFSET.into()).unwrap_or("0".into());
         msg.push(format!("master_replid:{}", master_replid));
-        msg.push(format!("master_repl_offset:{}", "0"))
+        msg.push(format!("master_repl_offset:{}", master_repl_offset))
     }
     DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
 }

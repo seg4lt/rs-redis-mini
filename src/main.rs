@@ -1,11 +1,13 @@
-use crate::store::Store;
+use crate::{
+    cli_args::CliArgs,
+    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET},
+};
 use std::{
     net::TcpListener,
     sync::{Arc, RwLock},
 };
 
 use anyhow::{anyhow, Context};
-use cli_args::CliArgs;
 pub(crate) mod cli_args;
 pub(crate) mod command;
 pub(crate) mod hash;
@@ -31,10 +33,10 @@ async fn main() -> anyhow::Result<()> {
     match cmd_args.get("--replicaof") {
         None => {
             let hash = hash::generate_random_string();
-            shared_map
-                .write()
-                .unwrap()
-                .set("__$$__master_replid".to_string(), hash, None);
+            let mut map = shared_map.write().unwrap();
+            map.set(KEY_IS_MASTER.into(), "true".into(), None);
+            map.set(KEY_MASTER_REPLID.into(), hash, None);
+            map.set(KEY_MASTER_REPL_OFFSET.into(), "0".into(), None);
         }
         Some(CliArgs::ReplicaOf(ip, master_port)) => {
             let (port, ip, master_port) = (port.clone(), ip.clone(), master_port.clone());
