@@ -6,7 +6,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
+use cli_args::CliArgs;
+pub(crate) mod cli_args;
 pub(crate) mod command;
 pub(crate) mod resp_parser;
 pub(crate) mod store;
@@ -34,17 +36,21 @@ async fn main() -> anyhow::Result<()> {
     println!("Logs from your program will appear here!");
 
     let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
-    let cmd_args = parse_cmd_args();
+    let cmd_args = Arc::new(CliArgs::get()?);
     let default_port = "6379".to_string();
-    let port = cmd_args.get("--port").unwrap_or(&default_port);
+    let port = match cmd_args.get("--port") {
+        Some(CliArgs::Port(port)) => port,
+        _ => &default_port,
+    };
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
     for stream in listener.incoming() {
         let cloned_map = shared_map.clone();
+        let cloned_args = cmd_args.clone();
         // TODO: Implement event loop like redis??
         std::thread::spawn(move || {
             let stream = stream.unwrap();
-            parse_tcp_stream(stream, cloned_map)
+            parse_tcp_stream(stream, cloned_map, cloned_args)
                 .context("Unable to parse tcp stream")
                 .unwrap();
         });
@@ -52,7 +58,11 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn parse_tcp_stream(mut stream: TcpStream, shared_map: Arc<RwLock<Store>>) -> anyhow::Result<()> {
+fn parse_tcp_stream(
+    mut stream: TcpStream,
+    shared_map: Arc<RwLock<Store>>,
+    cmd_args: Arc<HashMap<String, CliArgs>>,
+) -> anyhow::Result<()> {
     loop {
         {
             // Test to check message format
@@ -85,15 +95,19 @@ fn parse_tcp_stream(mut stream: TcpStream, shared_map: Arc<RwLock<Store>>) -> an
                     None => DataType::NullBulkString,
                 }
             }
-            Command::Info(_) => DataType::BulkString(format!(
-                "# Replication{LINE_ENDING}role:master{LINE_ENDING}"
-            )),
+            Command::Info(_) => {
+                let is_replica = cmd_args.get("--replicaof").is_some();
+                DataType::BulkString(format!(
+                    "# Replication{LINE_ENDING}role:{}{LINE_ENDING}",
+                    if is_replica { "slave" } else { "master" }
+                ))
+            }
             Command::Noop => {
                 // Do nothing
                 break;
             }
             #[allow(unreachable_patterns)]
-            _ => Err(anyhow::anyhow!("Unknown command"))?,
+            _ => Err(anyhow!("Unknown command"))?,
         }
         .to_string();
         stream
@@ -101,13 +115,4 @@ fn parse_tcp_stream(mut stream: TcpStream, shared_map: Arc<RwLock<Store>>) -> an
             .context("Unable to write to TcpStream")?;
     }
     Ok(())
-}
-
-fn parse_cmd_args() -> HashMap<String, String> {
-    let arg_vec = std::env::args().collect::<Vec<String>>();
-    let params = arg_vec[1..]
-        .chunks(2)
-        .map(|chunk| (chunk[0].clone(), chunk[1].clone()))
-        .collect::<HashMap<_, _>>();
-    params
 }
