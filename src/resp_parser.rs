@@ -6,19 +6,40 @@ use crate::{LINE_ENDING, NEW_LINE};
 pub enum DataType {
     SimpleString(String),
     BulkString(String),
+    NullBulkString,
     Array(Vec<DataType>),
+    Noop,
 }
 
 impl DataType {
+    pub fn to_string(&self) -> String {
+        match self {
+            DataType::SimpleString(s) => format!("+{}{LINE_ENDING}", s),
+            DataType::BulkString(s) => format!("${}{LINE_ENDING}{}{LINE_ENDING}", s.len(), s),
+            DataType::NullBulkString => format!("${}{LINE_ENDING}", "-1"),
+            DataType::Array(items) => {
+                let mut result = format!("*{}{LINE_ENDING}", items.len());
+                for item in items {
+                    result.push_str(&item.to_string());
+                }
+                result
+            }
+            DataType::Noop => "".to_string(),
+        }
+    }
     pub fn parse<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let mut buf = [0; 1];
-        reader
-            .read_exact(&mut buf)
+        let read_count = reader
+            .read(&mut buf)
             .context("Unable to determine DataType")?;
+        if read_count == 0 {
+            // Unable to read anything, so noop is sent
+            return Ok(DataType::Noop);
+        }
         match &buf[0] {
             b'*' => DataType::parse_array(reader).context("Unable to parse array"),
             b'$' => DataType::parse_bulk_string(reader).context("Unable to parse bulk string"),
-            _ => todo!("not implemented"),
+            _ => Err(anyhow::anyhow!("Unknown DataType"))?,
         }
     }
     fn parse_array<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -70,14 +91,39 @@ mod tests {
     #[test]
     fn test_determine_type() {
         use std::io::Cursor;
-        let mut cursor: Cursor<&str> = Cursor::new("*2\r\n$4\r\necho\r\n$3\r\nhey\r\n");
-        let data_type = DataType::parse(&mut cursor).expect("Unable to determine type");
-        assert_eq!(
-            data_type,
-            DataType::Array(vec![
-                DataType::BulkString("echo".into()),
-                DataType::BulkString("hey".into())
-            ])
-        );
+        struct Test {
+            input: &'static str,
+            expected: DataType,
+        }
+        let tests = vec![
+            Test {
+                input: "*2\r\n$4\r\necho\r\n$3\r\nhey\r\n",
+                expected: DataType::Array(vec![
+                    DataType::BulkString("echo".into()),
+                    DataType::BulkString("hey".into()),
+                ]),
+            },
+            Test {
+                input: "*3\r\n$3\r\nset\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+                expected: DataType::Array(vec![
+                    DataType::BulkString("set".into()),
+                    DataType::BulkString("key".into()),
+                    DataType::BulkString("value".into()),
+                ]),
+            },
+            Test {
+                input: "*2\r\n$3\r\nget\r\n$3\r\nkey\r\n",
+                expected: DataType::Array(vec![
+                    DataType::BulkString("get".into()),
+                    DataType::BulkString("key".into()),
+                ]),
+            },
+        ];
+
+        for test in tests {
+            let mut cursor: Cursor<&str> = Cursor::new(test.input);
+            let data_type = DataType::parse(&mut cursor).expect("Unable to determine type");
+            assert_eq!(data_type, test.expected);
+        }
     }
 }
