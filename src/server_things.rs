@@ -29,9 +29,10 @@ pub fn parse_tcp_stream(
             // println!("Content: {:?}", std::str::from_utf8(&buf).unwrap());
         }
         let mut reader: std::io::BufReader<&TcpStream> = std::io::BufReader::new(&stream);
-        let msg = match Command::parse_with_reader(&mut reader)? {
+        let command = Command::parse_with_reader(&mut reader)?;
+        let msg = match &command {
             Command::Ping(_) => DataType::SimpleString("PONG".to_string()),
-            Command::Echo(value) => DataType::SimpleString(value),
+            Command::Echo(value) => DataType::SimpleString(value.clone()),
             Command::Set(key, value, do_get, exp_time) => {
                 process_set_cmd(&shared_map, key, value, do_get, exp_time)?
             }
@@ -51,7 +52,23 @@ pub fn parse_tcp_stream(
         stream
             .write_all(msg.as_bytes())
             .context("Unable to write to TcpStream")?;
+        do_follow_up_if_needed(&command, &stream)?;
     }
+    Ok(())
+}
+
+fn do_follow_up_if_needed(command: &Command, mut stream: &TcpStream) -> anyhow::Result<()> {
+    match command {
+        Command::PSync(_, _) => {
+            // let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+            // let bytes = &u32::from_str_radix(hex, 16).unwrap().to_be_bytes();
+            // let body = std::str::from_utf8(bytes)?;
+            let msg =
+                DataType::NotBulkString(format!("{}", "hello".to_string()).into()).to_string();
+            stream.write_all(msg.as_bytes())?;
+        }
+        _ => {}
+    };
     Ok(())
 }
 
@@ -88,10 +105,10 @@ fn process_info_cmd(
     DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
 }
 
-fn process_get_cmd(shared_map: &Arc<RwLock<Store>>, key: String) -> anyhow::Result<DataType> {
+fn process_get_cmd(shared_map: &Arc<RwLock<Store>>, key: &String) -> anyhow::Result<DataType> {
     // Write lock here because get for now also removes expired keys
     let mut map = shared_map.write().unwrap();
-    let msg = match map.get(key) {
+    let msg = match map.get(key.clone()) {
         Some(value) => DataType::BulkString(value.to_string()),
         None => DataType::NullBulkString,
     };
@@ -100,14 +117,14 @@ fn process_get_cmd(shared_map: &Arc<RwLock<Store>>, key: String) -> anyhow::Resu
 
 fn process_set_cmd(
     shared_map: &Arc<RwLock<Store>>,
-    key: String,
-    value: String,
-    do_get: bool,
-    exp_time: Option<Duration>,
+    key: &String,
+    value: &String,
+    do_get: &bool,
+    exp_time: &Option<Duration>,
 ) -> anyhow::Result<DataType> {
     let mut map = shared_map.write().unwrap();
     let old_value = map.get(key.clone());
-    map.set(key, value, exp_time);
+    map.set(key.clone(), value.clone(), exp_time.clone());
     let msg = match do_get {
         true => match old_value {
             Some(old_value) => DataType::BulkString(old_value),

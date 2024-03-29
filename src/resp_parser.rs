@@ -7,6 +7,7 @@ pub enum DataType {
     SimpleString(String),
     BulkString(String),
     NullBulkString,
+    NotBulkString(String),
     Array(Vec<DataType>),
     Noop,
 }
@@ -16,6 +17,7 @@ impl DataType {
         match self {
             DataType::SimpleString(s) => format!("+{}{LINE_ENDING}", s),
             DataType::BulkString(s) => format!("${}{LINE_ENDING}{}{LINE_ENDING}", s.len(), s),
+            DataType::NotBulkString(s) => format!("${}{LINE_ENDING}{}", s.len(), s),
             DataType::NullBulkString => format!("${}{LINE_ENDING}", "-1"),
             DataType::Array(items) => {
                 let mut result = format!("*{}{LINE_ENDING}", items.len());
