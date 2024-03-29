@@ -41,7 +41,7 @@ pub fn parse_tcp_stream(
             Command::ReplConf(option, value) => process_replconf_cmd(option, value, &shared_map)?,
             Command::PSync(_, _) => process_psync_cmd(&shared_map)?,
             Command::Noop => {
-                println!("Noop command");
+                println!("🙏 >>> Noop command <<<");
                 // Do nothing
                 break;
             }
