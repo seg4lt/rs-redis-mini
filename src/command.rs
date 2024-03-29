@@ -37,7 +37,7 @@ impl Command {
             DataType::BulkString(s) => s,
             _ => return Err(anyhow!("Command must be of type BulkString")),
         };
-        match command.as_ref() {
+        match command.to_lowercase().as_ref() {
             "ping" => Self::parse_ping_cmd(args),
             "echo" => Self::parse_echo_cmd(args),
             "set" => Self::parse_set_cmd(args),

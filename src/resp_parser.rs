@@ -130,9 +130,9 @@ mod tests {
                 ]),
             },
             Test {
-                input: "*2\r\n$4\r\ninfo\r\n$11\r\nreplication\r\n",
+                input: "*2\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n",
                 expected: DataType::Array(vec![
-                    DataType::BulkString("info".into()),
+                    DataType::BulkString("INFO".into()),
                     DataType::BulkString("replication".into()),
                 ]),
             },
