@@ -33,7 +33,7 @@ impl DataType {
         let mut buf = [0; 1];
         let read_count = reader
             .read(&mut buf)
-            .context("Unable to determine DataType")?;
+            .context("Unable to read first byte which is used to determine data type")?;
         if read_count == 0 {
             // Unable to read anything, so noop is sent
             return Ok(DataType::Noop);
