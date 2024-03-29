@@ -11,6 +11,7 @@ pub enum Command {
     Set(String, String, bool, Option<Duration>),
     Get(String),
     Info(Option<String>),
+    ReplConf(String, String),
     Noop,
 }
 
@@ -44,8 +45,24 @@ impl Command {
             "set" => Self::parse_set_cmd(args),
             "get" => Self::parse_get_cmd(args),
             "info" => Self::parse_info_cmd(args),
+            "replconf" => Self::parse_replconf_cmd(args),
             _ => Err(anyhow!("Unknown command")),
         }
+    }
+    fn parse_replconf_cmd(args: &[DataType]) -> anyhow::Result<Command> {
+        if args.len() < 2 {
+            return Err(anyhow!("ReplConf command must have at least two arguments"));
+        }
+
+        let key = match args.get(0) {
+            Some(DataType::BulkString(key)) => key,
+            _ => return Err(anyhow!("Key must be of type BulkString")),
+        };
+        let value = match args.get(1) {
+            Some(DataType::BulkString(value)) => value,
+            _ => return Err(anyhow!("Value must be of type BulkString")),
+        };
+        Ok(Command::ReplConf(key.to_owned(), value.to_owned()))
     }
     fn parse_info_cmd(args: &[DataType]) -> anyhow::Result<Command> {
         match args.get(0) {

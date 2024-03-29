@@ -39,8 +39,25 @@ impl DataType {
         match &buf[0] {
             b'*' => DataType::parse_array(reader).context("Unable to parse array"),
             b'$' => DataType::parse_bulk_string(reader).context("Unable to parse bulk string"),
+            b'+' => DataType::parse_simple_string(reader).context("Unable to parse simple string"),
             _ => Err(anyhow::anyhow!("Unknown DataType"))?,
         }
+    }
+    fn parse_simple_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+        let mut buf = vec![];
+        let read_count = reader
+            .read_until(NEW_LINE, &mut buf)
+            .context("Unable to read simple string")?;
+        if read_count == 0 {
+            return Err(anyhow::anyhow!(
+                "Zero bytes read - unable to read simple string"
+            ));
+        }
+        Ok(DataType::SimpleString(
+            std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
+                .context("Unable to convert simple string buffer to string")?
+                .to_string(),
+        ))
     }
     fn parse_array<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let length = Self::read_count(reader).context("Unable to determine length of an array")?;

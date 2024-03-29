@@ -23,29 +23,22 @@ async fn main() -> anyhow::Result<()> {
 
     let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
     let cmd_args = Arc::new(CliArgs::get()?);
+    let default_port = "6379".to_string();
+    let port = match cmd_args.get("--port") {
+        Some(CliArgs::Port(port)) => port,
+        _ => &default_port,
+    };
     match cmd_args.get("--replicaof") {
         None => {
             let hash = hash::generate_random_string();
             shared_map
                 .write()
                 .unwrap()
-                .set("__$$__hash".to_string(), hash, None);
+                .set("__$$__master_replid".to_string(), hash, None);
         }
-        Some(CliArgs::ReplicaOf(ip, port)) => {
-            let server = format!("{}:{}", ip, port);
-            let mut stream = TcpStream::connect(server).context("Cannot connect to tcp stream")?;
-            let msg = DataType::Array(vec![DataType::BulkString("PING".to_string())]);
-            println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
-            stream.write_all(msg.to_string().as_ref())?
-        }
+        Some(CliArgs::ReplicaOf(ip, master_port)) => sync_with_master(port, ip, master_port)?,
         _ => Err(anyhow!("Invalid --replicaof argument"))?,
     }
-
-    let default_port = "6379".to_string();
-    let port = match cmd_args.get("--port") {
-        Some(CliArgs::Port(port)) => port,
-        _ => &default_port,
-    };
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
     for stream in listener.incoming() {
@@ -62,6 +55,50 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn sync_with_master(port: &String, ip: &String, master_port: &String) -> anyhow::Result<()> {
+    let server = format!("{}:{}", ip, master_port);
+    let mut stream = TcpStream::connect(server).context("Cannot connect to tcp stream")?;
+
+    // Send PING to master
+    let msg = DataType::Array(vec![DataType::BulkString("PING".to_string())]);
+    println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
+    stream.write_all(msg.to_string().as_ref())?;
+
+    let mut reader = std::io::BufReader::new(&stream);
+    let response = DataType::parse(&mut reader)?;
+    println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
+
+    // Send REPLCONF listening-port <port>
+    let msg = DataType::Array(vec![
+        DataType::BulkString("REPLCONF".to_string()),
+        DataType::BulkString("listening-port".to_string()),
+        DataType::BulkString(format!("{}", port)),
+    ]);
+
+    println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
+    stream.write_all(msg.to_string().as_ref())?;
+
+    // Send REPLCONF capa psync2
+    let mut reader = std::io::BufReader::new(&stream);
+    let response = DataType::parse(&mut reader)?;
+    println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
+
+    let msg = DataType::Array(vec![
+        DataType::BulkString("REPLCONF".to_string()),
+        DataType::BulkString("capa".to_string()),
+        DataType::BulkString("psync2".to_string()),
+    ]);
+
+    println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
+    stream.write_all(msg.to_string().as_ref())?;
+
+    let mut reader = std::io::BufReader::new(&stream);
+    let response = DataType::parse(&mut reader)?;
+    println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
+
+    Ok(())
+}
+
 fn parse_tcp_stream(
     mut stream: TcpStream,
     shared_map: Arc<RwLock<Store>>,
@@ -75,7 +112,7 @@ fn parse_tcp_stream(
             // stream.read(&mut buf)?;
             // println!("Content: {:?}", std::str::from_utf8(&buf).unwrap());
         }
-        let mut reader = std::io::BufReader::new(&stream);
+        let mut reader: std::io::BufReader<&TcpStream> = std::io::BufReader::new(&stream);
         let msg = match Command::parse_with_reader(&mut reader)? {
             Command::Ping(_) => DataType::SimpleString("PONG".to_string()),
             Command::Echo(value) => DataType::SimpleString(value),
@@ -107,12 +144,13 @@ fn parse_tcp_stream(
                 ];
                 if !is_replica {
                     let mut map = shared_map.write().unwrap();
-                    let master_replid = map.get("__$$__hash".to_string()).unwrap();
+                    let master_replid = map.get("__$$__master_replid".to_string()).unwrap();
                     msg.push(format!("master_replid:{}", master_replid));
                     msg.push(format!("master_repl_offset:{}", "0"))
                 }
                 DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
             }
+            Command::ReplConf(_, _) => DataType::SimpleString("OK".to_string()),
             Command::Noop => {
                 // Do nothing
                 break;
