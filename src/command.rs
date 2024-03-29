@@ -21,6 +21,7 @@ impl Command {
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
+        println!("🙏 >>> Command Request: {:?} <<<", data_type.to_string());
         match data_type {
             DataType::Array(items) => {
                 if items.len() == 0 {

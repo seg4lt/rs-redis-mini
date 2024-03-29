@@ -23,13 +23,24 @@ async fn main() -> anyhow::Result<()> {
 
     let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
     let cmd_args = Arc::new(CliArgs::get()?);
-    if cmd_args.get("--replicaof").is_none() {
-        let hash = hash::generate_random_string();
-        shared_map
-            .write()
-            .unwrap()
-            .set("__$$__hash".to_string(), hash, None);
+    match cmd_args.get("--replicaof") {
+        None => {
+            let hash = hash::generate_random_string();
+            shared_map
+                .write()
+                .unwrap()
+                .set("__$$__hash".to_string(), hash, None);
+        }
+        Some(CliArgs::ReplicaOf(ip, port)) => {
+            let server = format!("{}:{}", ip, port);
+            let mut stream = TcpStream::connect(server).context("Cannot connect to tcp stream")?;
+            let msg = DataType::Array(vec![DataType::BulkString("PING".to_string())]);
+            println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
+            stream.write_all(msg.to_string().as_ref())?
+        }
+        _ => Err(anyhow!("Invalid --replicaof argument"))?,
     }
+
     let default_port = "6379".to_string();
     let port = match cmd_args.get("--port") {
         Some(CliArgs::Port(port)) => port,
@@ -110,6 +121,7 @@ fn parse_tcp_stream(
             _ => Err(anyhow!("Unknown command"))?,
         }
         .to_string();
+        println!("🙏 >>> Response: {:?} <<<", msg);
         stream
             .write_all(msg.as_bytes())
             .context("Unable to write to TcpStream")?;
