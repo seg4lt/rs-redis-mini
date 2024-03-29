@@ -1,5 +1,6 @@
 use crate::{command::Command, resp_parser::DataType, store::Store};
 use std::{
+    collections::HashMap,
     io::Write,
     net::{TcpListener, TcpStream},
     sync::{Arc, RwLock},
@@ -33,8 +34,11 @@ async fn main() -> anyhow::Result<()> {
     println!("Logs from your program will appear here!");
 
     let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
+    let cmd_args = parse_cmd_args();
+    let default_port = "6379".to_string();
+    let port = cmd_args.get("--port").unwrap_or(&default_port);
 
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
     for stream in listener.incoming() {
         let cloned_map = shared_map.clone();
         // TODO: Implement event loop like redis??
@@ -93,4 +97,13 @@ fn parse_tcp_stream(mut stream: TcpStream, shared_map: Arc<RwLock<Store>>) -> an
             .context("Unable to write to TcpStream")?;
     }
     Ok(())
+}
+
+fn parse_cmd_args() -> HashMap<String, String> {
+    let arg_vec = std::env::args().collect::<Vec<String>>();
+    let params = arg_vec[1..]
+        .chunks(2)
+        .map(|chunk| (chunk[0].clone(), chunk[1].clone()))
+        .collect::<HashMap<_, _>>();
+    params
 }
