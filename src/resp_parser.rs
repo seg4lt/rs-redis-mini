@@ -129,6 +129,13 @@ mod tests {
                     DataType::BulkString("1000".into()),
                 ]),
             },
+            Test {
+                input: "*2\r\n$4\r\ninfo\r\n$11\r\nreplication\r\n",
+                expected: DataType::Array(vec![
+                    DataType::BulkString("info".into()),
+                    DataType::BulkString("replication".into()),
+                ]),
+            },
         ];
 
         for test in tests {

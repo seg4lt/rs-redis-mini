@@ -10,6 +10,7 @@ pub enum Command {
     Echo(String),
     Set(String, String, bool, Option<Duration>),
     Get(String),
+    Info(Option<String>),
     Noop,
 }
 
@@ -41,7 +42,15 @@ impl Command {
             "echo" => Self::parse_echo_cmd(args),
             "set" => Self::parse_set_cmd(args),
             "get" => Self::parse_get_cmd(args),
+            "info" => Self::parse_info_cmd(args),
             _ => Err(anyhow!("Unknown command")),
+        }
+    }
+    fn parse_info_cmd(args: &[DataType]) -> anyhow::Result<Command> {
+        match args.get(0) {
+            None => Ok(Command::Info(None)),
+            Some(DataType::BulkString(value)) => Ok(Command::Info(Some(value.to_owned()))),
+            _ => Err(anyhow!("Info args must be bulk string or empty")),
         }
     }
     fn parse_get_cmd(args: &[DataType]) -> anyhow::Result<Command> {
@@ -131,9 +140,6 @@ impl Command {
         match value {
             DataType::BulkString(value) => {
                 let value = value.parse::<u64>().context("Unable to parse value")?;
-                // let now = SystemTime::now()
-                //     .duration_since(SystemTime::UNIX_EPOCH)
-                //     .context("Unable to get time since epoch")?;
                 match flag {
                     "px" => Ok(Some(Duration::from_millis(value))),
                     "ex" => Ok(Some(Duration::from_secs(value))),
@@ -202,6 +208,13 @@ mod tests {
                     false,
                     Some(Duration::from_secs(1000)),
                 ),
+            },
+            Test {
+                input: DataType::Array(vec![
+                    DataType::BulkString("info".into()),
+                    DataType::BulkString("replication".into()),
+                ]),
+                expected: Command::Info(Some("replication".into())),
             },
         ];
 

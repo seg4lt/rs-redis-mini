@@ -56,6 +56,7 @@ fn parse_tcp_stream(mut stream: TcpStream, shared_map: Arc<RwLock<Store>>) -> an
     loop {
         {
             // Test to check message format
+            // use std::io::Read;
             // let mut buf = [0; 256];
             // stream.read(&mut buf)?;
             // println!("Content: {:?}", std::str::from_utf8(&buf).unwrap());
@@ -84,6 +85,9 @@ fn parse_tcp_stream(mut stream: TcpStream, shared_map: Arc<RwLock<Store>>) -> an
                     None => DataType::NullBulkString,
                 }
             }
+            Command::Info(_) => DataType::BulkString(format!(
+                "# Replication{LINE_ENDING}role:master{LINE_ENDING}"
+            )),
             Command::Noop => {
                 // Do nothing
                 break;
