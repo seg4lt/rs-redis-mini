@@ -64,7 +64,7 @@ fn process_psync_cmd(shared_map: &Arc<RwLock<Store>>) -> anyhow::Result<DataType
         .ok_or_else(|| anyhow!("No master replid found"))?;
     let master_repl_offset = map.get(KEY_MASTER_REPL_OFFSET.into()).unwrap_or("0".into());
     Ok(DataType::SimpleString(format!(
-        "FULLSYNC {} {}",
+        "FULLRESYNC {} {}",
         master_replid, master_repl_offset
     )))
 }
