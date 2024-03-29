@@ -4,7 +4,7 @@ use anyhow::Context;
 
 use crate::resp_parser::DataType;
 
-pub fn sync_with_master(port: &String, ip: &String, master_port: &String) -> anyhow::Result<()> {
+pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow::Result<()> {
     let server = format!("{}:{}", ip, master_port);
     let mut stream = TcpStream::connect(server).context("Cannot connect to tcp stream")?;
 

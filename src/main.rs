@@ -9,9 +9,9 @@ use cli_args::CliArgs;
 pub(crate) mod cli_args;
 pub(crate) mod command;
 pub(crate) mod hash;
-pub(crate) mod master_things;
 pub(crate) mod replica_things;
 pub(crate) mod resp_parser;
+pub(crate) mod server_things;
 pub(crate) mod store;
 
 pub const LINE_ENDING: &str = "\r\n";
@@ -37,19 +37,23 @@ async fn main() -> anyhow::Result<()> {
                 .set("__$$__master_replid".to_string(), hash, None);
         }
         Some(CliArgs::ReplicaOf(ip, master_port)) => {
-            replica_things::sync_with_master(port, ip, master_port)?
+            let (port, ip, master_port) = (port.clone(), ip.clone(), master_port.clone());
+            std::thread::spawn(move || -> anyhow::Result<()> {
+                replica_things::sync_with_master(port, ip, master_port)
+                    .context("Unable to sync with master")?;
+                Ok(())
+            });
         }
         _ => Err(anyhow!("Invalid --replicaof argument"))?,
     }
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).unwrap();
     for stream in listener.incoming() {
-        let cloned_map = shared_map.clone();
-        let cloned_args = cmd_args.clone();
+        let (map, args) = (shared_map.clone(), cmd_args.clone());
         // TODO: Implement event loop like redis??
         std::thread::spawn(move || {
             let stream = stream.unwrap();
-            master_things::parse_tcp_stream(stream, cloned_map, cloned_args)
+            server_things::parse_tcp_stream(stream, map, args)
                 .context("Unable to parse tcp stream")
                 .unwrap();
         });
