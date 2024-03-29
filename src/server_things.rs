@@ -60,11 +60,18 @@ pub fn parse_tcp_stream(
 fn do_follow_up_if_needed(command: &Command, mut stream: &TcpStream) -> anyhow::Result<()> {
     match command {
         Command::PSync(_, _) => {
-            // let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
-            // let bytes = &u32::from_str_radix(hex, 16).unwrap().to_be_bytes();
+            pub fn decode_hex(s: &str) -> anyhow::Result<Vec<u8>> {
+                let r: Vec<u8> = (0..s.len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+                    .collect();
+                Ok(r)
+            }
+            let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+            // let bytes = String::from_utf8(decode_hex(hex)?)?;
+            // println!("Bytes: {:?}", bytes);
             // let body = std::str::from_utf8(bytes)?;
-            let msg =
-                DataType::NotBulkString(format!("{}", "hello".to_string()).into()).to_string();
+            let msg = DataType::NotBulkString(format!("{}", hex).into()).to_string();
             stream.write_all(msg.as_bytes())?;
         }
         _ => {}
