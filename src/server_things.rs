@@ -3,7 +3,9 @@ use std::{
     collections::HashMap,
     io::Write,
     net::TcpStream,
+    os::unix::process,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use crate::LINE_ENDING;
@@ -27,40 +29,12 @@ pub fn parse_tcp_stream(
             Command::Ping(_) => DataType::SimpleString("PONG".to_string()),
             Command::Echo(value) => DataType::SimpleString(value),
             Command::Set(key, value, do_get, exp_time) => {
-                let mut map = shared_map.write().unwrap();
-                let old_value = map.get(key.clone());
-                map.set(key, value, exp_time);
-                match do_get {
-                    true => match old_value {
-                        Some(old_value) => DataType::BulkString(old_value),
-                        None => DataType::NullBulkString,
-                    },
-                    false => DataType::SimpleString("OK".to_string()),
-                }
+                process_set_cmd(&shared_map, key, value, do_get, exp_time)?
             }
-            Command::Get(key) => {
-                // Write lock here because get for now also removes expired keys
-                let mut map = shared_map.write().unwrap();
-                match map.get(key) {
-                    Some(value) => DataType::BulkString(value.to_string()),
-                    None => DataType::NullBulkString,
-                }
-            }
-            Command::Info(_) => {
-                let is_replica = cmd_args.get("--replicaof").is_some();
-                let mut msg = vec![
-                    format!("# Replication"),
-                    format!("role:{}", if is_replica { "slave" } else { "master" }),
-                ];
-                if !is_replica {
-                    let mut map = shared_map.write().unwrap();
-                    let master_replid = map.get("__$$__master_replid".to_string()).unwrap();
-                    msg.push(format!("master_replid:{}", master_replid));
-                    msg.push(format!("master_repl_offset:{}", "0"))
-                }
-                DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
-            }
+            Command::Get(key) => process_get_cmd(&shared_map, key)?,
+            Command::Info(_) => process_info_cmd(&shared_map, &cmd_args),
             Command::ReplConf(_, _) => DataType::SimpleString("OK".to_string()),
+            Command::PSync(_, _) => DataType::SimpleString("FULLSYNC <REPL_ID>".to_string()),
             Command::Noop => {
                 // Do nothing
                 break;
@@ -75,4 +49,52 @@ pub fn parse_tcp_stream(
             .context("Unable to write to TcpStream")?;
     }
     Ok(())
+}
+
+fn process_info_cmd(
+    shared_map: &Arc<RwLock<Store>>,
+    cmd_args: &Arc<HashMap<String, CliArgs>>,
+) -> DataType {
+    let is_replica = cmd_args.get("--replicaof").is_some();
+    let mut msg = vec![
+        format!("# Replication"),
+        format!("role:{}", if is_replica { "slave" } else { "master" }),
+    ];
+    if !is_replica {
+        let mut map = shared_map.write().unwrap();
+        let master_replid = map.get("__$$__master_replid".to_string()).unwrap();
+        msg.push(format!("master_replid:{}", master_replid));
+        msg.push(format!("master_repl_offset:{}", "0"))
+    }
+    DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
+}
+
+fn process_get_cmd(shared_map: &Arc<RwLock<Store>>, key: String) -> anyhow::Result<DataType> {
+    // Write lock here because get for now also removes expired keys
+    let mut map = shared_map.write().unwrap();
+    let msg = match map.get(key) {
+        Some(value) => DataType::BulkString(value.to_string()),
+        None => DataType::NullBulkString,
+    };
+    Ok(msg)
+}
+
+fn process_set_cmd(
+    shared_map: &Arc<RwLock<Store>>,
+    key: String,
+    value: String,
+    do_get: bool,
+    exp_time: Option<Duration>,
+) -> anyhow::Result<DataType> {
+    let mut map = shared_map.write().unwrap();
+    let old_value = map.get(key.clone());
+    map.set(key, value, exp_time);
+    let msg = match do_get {
+        true => match old_value {
+            Some(old_value) => DataType::BulkString(old_value),
+            None => DataType::NullBulkString,
+        },
+        false => DataType::SimpleString("OK".to_string()),
+    };
+    Ok(msg)
 }

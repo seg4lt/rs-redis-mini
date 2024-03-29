@@ -12,7 +12,6 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
     let msg = DataType::Array(vec![DataType::BulkString("PING".to_string())]);
     println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
     stream.write_all(msg.to_string().as_ref())?;
-
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
     println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
@@ -26,12 +25,11 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
 
     println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
     stream.write_all(msg.to_string().as_ref())?;
-
-    // Send REPLCONF capa psync2
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
     println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
 
+    // Send REPLCONF capa psync2
     let msg = DataType::Array(vec![
         DataType::BulkString("REPLCONF".to_string()),
         DataType::BulkString("capa".to_string()),
@@ -40,7 +38,19 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
 
     println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
     stream.write_all(msg.to_string().as_ref())?;
+    let mut reader = std::io::BufReader::new(&stream);
+    let response = DataType::parse(&mut reader)?;
+    println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
 
+    // Sendc PSYNC <master_replid> <offset>
+    let msg = DataType::Array(vec![
+        DataType::BulkString("PSYNC".to_string()),
+        DataType::BulkString("?".to_string()),
+        DataType::BulkString("-1".to_string()),
+    ]);
+
+    println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
+    stream.write_all(msg.to_string().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
     println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
