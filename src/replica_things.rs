@@ -54,6 +54,5 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
     println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
-
     Ok(())
 }

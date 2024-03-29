@@ -11,7 +11,7 @@ use crate::{
     cli_args::CliArgs,
     command::Command,
     resp_parser::DataType,
-    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPL_OFFSET},
+    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPL_OFFSET, KEY_REPLICA_PORT},
 };
 use crate::{store::KEY_MASTER_REPLID, LINE_ENDING};
 
@@ -38,9 +38,10 @@ pub fn parse_tcp_stream(
             }
             Command::Get(key) => process_get_cmd(&shared_map, key)?,
             Command::Info(_) => process_info_cmd(&shared_map, &cmd_args),
-            Command::ReplConf(_, _) => DataType::SimpleString("OK".to_string()),
+            Command::ReplConf(option, value) => process_replconf_cmd(option, value, &shared_map)?,
             Command::PSync(_, _) => process_psync_cmd(&shared_map)?,
             Command::Noop => {
+                println!("Noop command");
                 // Do nothing
                 break;
             }
@@ -52,31 +53,58 @@ pub fn parse_tcp_stream(
         stream
             .write_all(msg.as_bytes())
             .context("Unable to write to TcpStream")?;
-        do_follow_up_if_needed(&command, &stream)?;
+        do_follow_up_if_needed(&command, &shared_map)?;
     }
     Ok(())
 }
 
-fn do_follow_up_if_needed(command: &Command, mut stream: &TcpStream) -> anyhow::Result<()> {
+fn do_follow_up_if_needed(command: &Command, map: &Arc<RwLock<Store>>) -> anyhow::Result<()> {
     match command {
         Command::PSync(_, _) => {
-            pub fn decode_hex(s: &str) -> anyhow::Result<Vec<u8>> {
-                let r: Vec<u8> = (0..s.len())
-                    .step_by(2)
-                    .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-                    .collect();
-                Ok(r)
-            }
-            let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
-            // let bytes = String::from_utf8(decode_hex(hex)?)?;
-            // println!("Bytes: {:?}", bytes);
-            // let body = std::str::from_utf8(bytes)?;
-            let msg = DataType::NotBulkString(format!("{}", hex).into()).to_string();
-            stream.write_all(msg.as_bytes())?;
+            let mut map = map.write().unwrap();
+            let port = map
+                .get(KEY_REPLICA_PORT.into())
+                .ok_or_else(|| anyhow!("No replica port found"))?;
+            let host = "127.0.0.1".to_string();
+            send_rdb_to_replica(&host, &port)?;
         }
         _ => {}
     };
     Ok(())
+}
+
+fn send_rdb_to_replica(replica_ip: &String, replica_port: &String) -> anyhow::Result<()> {
+    let mut stream = TcpStream::connect(format!("{}:{}", replica_ip, replica_port))?;
+    pub fn decode_hex(s: &str) -> anyhow::Result<String> {
+        let r: String = (0..s.len())
+            .step_by(2)
+            .map(|i| format!("0{:b}", u8::from_str_radix(&s[i..i + 2], 16).unwrap()))
+            .collect::<Vec<String>>()
+            .join(" ");
+        Ok(r)
+    }
+    let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+    let bytes = decode_hex(hex)?;
+    let msg = DataType::NotBulkString(bytes);
+
+    println!("🙏 >>> ToReplica: {:?} <<<", msg.to_string());
+    stream.write_all(msg.to_string().as_bytes())?;
+    Ok(())
+}
+
+fn process_replconf_cmd(
+    option: &String,
+    value: &String,
+    map: &Arc<RwLock<Store>>,
+) -> anyhow::Result<DataType> {
+    match option.as_str() {
+        "listening-port" => {
+            let mut map = map.write().unwrap();
+            map.set(KEY_REPLICA_PORT.into(), value.clone(), None);
+        }
+        _ => {}
+    }
+    Ok(DataType::SimpleString("OK".to_string()))
 }
 
 fn process_psync_cmd(shared_map: &Arc<RwLock<Store>>) -> anyhow::Result<DataType> {

@@ -75,17 +75,17 @@ impl DataType {
     fn parse_bulk_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let length =
             DataType::read_count(reader).context("Unable to read length of bulk string")?;
-        let mut buf = vec![0; length + LINE_ENDING.len()];
+        let mut buf = vec![0; length];
         reader
             .read_exact(&mut buf)
             .context("Unable to read bulk string")?;
         let content = String::from_utf8(buf).context("Unable to convert buffer to string")?;
-        if !content.ends_with(LINE_ENDING) {
-            return Err(anyhow::anyhow!("Length doesn't match the size of content"));
+        let mut buf = [0; 2];
+        let read_count = reader.read(&mut buf)?;
+        if read_count == 0 {
+            return Ok(DataType::NotBulkString(content));
         }
-        Ok(DataType::BulkString(
-            content[..content.len() - LINE_ENDING.len()].to_string(),
-        ))
+        Ok(DataType::BulkString(content[..content.len()].to_string()))
     }
 
     fn read_count<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<usize> {

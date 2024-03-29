@@ -31,6 +31,7 @@ impl Command {
                 }
                 Self::from(&items[0], &items[1..])
             }
+            DataType::NotBulkString(_) => Ok(Command::Noop),
             DataType::Noop => Ok(Command::Noop),
             _ => Err(anyhow!("Command must be of type Array")),
         }
