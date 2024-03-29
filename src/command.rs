@@ -1,4 +1,6 @@
-use anyhow::{Context, Ok};
+use std::time::Duration;
+
+use anyhow::{anyhow, Context, Ok};
 
 use crate::resp_parser::DataType;
 
@@ -6,7 +8,7 @@ use crate::resp_parser::DataType;
 pub enum Command {
     Ping(Option<String>),
     Echo(String),
-    Set(String, String),
+    Set(String, String, bool, Option<Duration>),
     Get(String),
     Noop,
 }
@@ -21,79 +23,132 @@ impl Command {
         match data_type {
             DataType::Array(items) => {
                 if items.len() == 0 {
-                    return Err(anyhow::anyhow!("Array must have at least one item"));
+                    return Err(anyhow!("Array must have at least one item"));
                 }
                 Self::from(&items[0], &items[1..])
             }
             DataType::Noop => Ok(Command::Noop),
-            _ => Err(anyhow::anyhow!("Command must be of type Array")),
+            _ => Err(anyhow!("Command must be of type Array")),
         }
     }
     fn from(command: &DataType, args: &[DataType]) -> anyhow::Result<Command> {
         let command = match command {
             DataType::BulkString(s) => s,
-            _ => return Err(anyhow::anyhow!("Command must be of type BulkString")),
+            _ => return Err(anyhow!("Command must be of type BulkString")),
         };
         match command.as_ref() {
-            "ping" => {
-                if args.len() > 1 {
-                    return Err(anyhow::anyhow!(
-                        "Ping command must have at most one argument"
-                    ));
-                }
+            "ping" => Self::parse_ping_cmd(args),
+            "echo" => Self::parse_echo_cmd(args),
+            "set" => Self::parse_set_cmd(args),
+            "get" => Self::parse_get_cmd(args),
+            _ => Err(anyhow!("Unknown command")),
+        }
+    }
+    fn parse_get_cmd(args: &[DataType]) -> anyhow::Result<Command> {
+        if args.len() < 1 {
+            return Err(anyhow::anyhow!(
+                "Get command must have at least one argument"
+            ));
+        }
+        let key = match args.get(0) {
+            Some(DataType::BulkString(key)) => key,
+            _ => return Err(anyhow::anyhow!("Key must be of type BulkString")),
+        };
+        Ok(Command::Get(key.to_owned()))
+    }
+    fn parse_echo_cmd(args: &[DataType]) -> anyhow::Result<Command> {
+        if args.len() > 1 || args.len() == 0 {
+            return Err(anyhow::anyhow!(
+                "echo command must have exactly one argument"
+            ));
+        }
+        match args.get(0) {
+            Some(DataType::BulkString(value)) => Ok(Command::Echo(value.to_owned())),
+            _ => Err(anyhow::anyhow!("Echo args must be bulk string")),
+        }
+    }
 
-                match args.get(0) {
-                    None => Ok(Command::Ping(None)),
-                    Some(DataType::BulkString(value)) => Ok(Command::Ping(Some(value.to_owned()))),
-                    _ => Err(anyhow::anyhow!("Ping args must be bulk string or empty")),
+    fn parse_ping_cmd(args: &[DataType]) -> anyhow::Result<Command> {
+        if args.len() > 1 {
+            return Err(anyhow!("Ping command must have at most one argument"));
+        }
+        match args.get(0) {
+            None => Ok(Command::Ping(None)),
+            Some(DataType::BulkString(value)) => Ok(Command::Ping(Some(value.to_owned()))),
+            _ => Err(anyhow!("Ping args must be bulk string or empty")),
+        }
+    }
+    fn parse_set_cmd(args: &[DataType]) -> anyhow::Result<Command> {
+        if args.len() < 2 {
+            return Err(anyhow!("Set command must have at least two arguments"));
+        }
+        let key = match args.get(0) {
+            Some(DataType::BulkString(key)) => key,
+            _ => return Err(anyhow!("Key must be of type BulkString")),
+        };
+        let value = match args.get(1) {
+            Some(DataType::BulkString(value)) => value,
+            _ => return Err(anyhow!("Value must be of type BulkString")),
+        };
+        let mut do_get = false;
+        let mut exp_time: Option<Duration> = None;
+        let mut i = 2;
+        while i < args.len() {
+            match args.get(i) {
+                Some(DataType::BulkString(flag)) => match flag.to_lowercase().as_str() {
+                    "get" => {
+                        do_get = true;
+                    }
+                    "ex" | "px" => {
+                        i += 1;
+                        exp_time = Self::parse_set_cmd_exp_time_flag(
+                            flag.to_lowercase().as_str(),
+                            i,
+                            args,
+                        )?;
+                    }
+                    _ => Err(anyhow!("Unknown flag sent to SET command"))?,
+                },
+                _ => Err(anyhow!("Flag must be of type BulkString"))?,
+            }
+            i += 1;
+        }
+        return Ok(Command::Set(
+            key.to_owned(),
+            value.to_owned(),
+            do_get,
+            exp_time,
+        ));
+    }
+    fn parse_set_cmd_exp_time_flag(
+        flag: &str,
+        value_idx: usize,
+        args: &[DataType],
+    ) -> anyhow::Result<Option<Duration>> {
+        let value = args
+            .get(value_idx)
+            .ok_or_else(|| anyhow!(format!("{} flag must have a value", flag)))?;
+        match value {
+            DataType::BulkString(value) => {
+                let value = value.parse::<u64>().context("Unable to parse value")?;
+                // let now = SystemTime::now()
+                //     .duration_since(SystemTime::UNIX_EPOCH)
+                //     .context("Unable to get time since epoch")?;
+                match flag {
+                    "px" => Ok(Some(Duration::from_millis(value))),
+                    "ex" => Ok(Some(Duration::from_secs(value))),
+                    _ => Err(anyhow!("Unknown flag for SET command")),
                 }
             }
-            "echo" => {
-                if args.len() > 1 || args.len() == 0 {
-                    return Err(anyhow::anyhow!(
-                        "echo command must have exactly one argument"
-                    ));
-                }
-                match args.get(0) {
-                    Some(DataType::BulkString(value)) => Ok(Command::Echo(value.to_owned())),
-                    _ => Err(anyhow::anyhow!("Echo args must be bulk string")),
-                }
-            }
-            "set" => {
-                if args.len() < 2 {
-                    return Err(anyhow::anyhow!(
-                        "Set command must have at least two arguments"
-                    ));
-                }
-                let key = match args.get(0) {
-                    Some(DataType::BulkString(key)) => key,
-                    _ => return Err(anyhow::anyhow!("Key must be of type BulkString")),
-                };
-                let value = match args.get(1) {
-                    Some(DataType::BulkString(value)) => value,
-                    _ => return Err(anyhow::anyhow!("Value must be of type BulkString")),
-                };
-                Ok(Command::Set(key.to_owned(), value.to_owned()))
-            }
-            "get" => {
-                if args.len() < 1 {
-                    return Err(anyhow::anyhow!(
-                        "Get command must have at least one argument"
-                    ));
-                }
-                let key = match args.get(0) {
-                    Some(DataType::BulkString(key)) => key,
-                    _ => return Err(anyhow::anyhow!("Key must be of type BulkString")),
-                };
-                Ok(Command::Get(key.to_owned()))
-            }
-            _ => Err(anyhow::anyhow!("Unknown command")),
+            _ => Err(anyhow!("Ex flag value must be a bulk string"))?,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use crate::command::Command;
     use crate::resp_parser::DataType;
 
@@ -124,7 +179,7 @@ mod tests {
                     DataType::BulkString("key".into()),
                     DataType::BulkString("value".into()),
                 ]),
-                expected: Command::Set("key".into(), "value".into()),
+                expected: Command::Set("key".into(), "value".into(), false, None),
             },
             Test {
                 input: DataType::Array(vec![
@@ -132,6 +187,21 @@ mod tests {
                     DataType::BulkString("key".into()),
                 ]),
                 expected: Command::Get("key".into()),
+            },
+            Test {
+                input: DataType::Array(vec![
+                    DataType::BulkString("set".into()),
+                    DataType::BulkString("key".into()),
+                    DataType::BulkString("value".into()),
+                    DataType::BulkString("ex".into()),
+                    DataType::BulkString("1000".into()),
+                ]),
+                expected: Command::Set(
+                    "key".into(),
+                    "value".into(),
+                    false,
+                    Some(Duration::from_secs(1000)),
+                ),
             },
         ];
 

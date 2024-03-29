@@ -118,6 +118,17 @@ mod tests {
                     DataType::BulkString("key".into()),
                 ]),
             },
+            Test {
+                input:
+                    "*5\r\n$3\r\nset\r\n$4\r\nkey2\r\n$6\r\nvalus2\r\n$2\r\nex\r\n$4\r\n1000\r\n",
+                expected: DataType::Array(vec![
+                    DataType::BulkString("set".into()),
+                    DataType::BulkString("key2".into()),
+                    DataType::BulkString("valus2".into()),
+                    DataType::BulkString("ex".into()),
+                    DataType::BulkString("1000".into()),
+                ]),
+            },
         ];
 
         for test in tests {

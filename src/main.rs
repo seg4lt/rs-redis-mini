@@ -1,7 +1,6 @@
-use crate::{command::Command, resp_parser::DataType};
+use crate::{command::Command, resp_parser::DataType, store::Store};
 use std::{
-    collections::HashMap,
-    io::{Read, Write},
+    io::Write,
     net::{TcpListener, TcpStream},
     sync::{Arc, RwLock},
 };
@@ -14,11 +13,26 @@ pub(crate) mod store;
 pub const LINE_ENDING: &str = "\r\n";
 pub const NEW_LINE: u8 = b'\n';
 
+#[test]
+fn test() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap();
+    let test = std::time::Duration::from_millis(10);
+    let fut = now + test;
+    println!(
+        "now: {:?}, test: {:?}, fut: {:?}",
+        now.as_millis(),
+        test.as_millis(),
+        fut.as_millis()
+    )
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("Logs from your program will appear here!");
 
-    let shared_map: Arc<RwLock<HashMap<String, String>>> = Arc::new(RwLock::new(HashMap::new()));
+    let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     for stream in listener.incoming() {
@@ -34,10 +48,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn parse_tcp_stream(
-    mut stream: TcpStream,
-    shared_map: Arc<RwLock<HashMap<String, String>>>,
-) -> anyhow::Result<()> {
+fn parse_tcp_stream(mut stream: TcpStream, shared_map: Arc<RwLock<Store>>) -> anyhow::Result<()> {
     loop {
         {
             // Test to check message format
@@ -49,14 +60,22 @@ fn parse_tcp_stream(
         let msg = match Command::parse_with_reader(&mut reader)? {
             Command::Ping(_) => DataType::SimpleString("PONG".to_string()),
             Command::Echo(value) => DataType::SimpleString(value),
-            Command::Set(key, value) => {
+            Command::Set(key, value, do_get, exp_time) => {
                 let mut map = shared_map.write().unwrap();
-                map.insert(key, value);
-                DataType::SimpleString("OK".to_string())
+                let old_value = map.get(key.clone());
+                map.set(key, value, exp_time);
+                match do_get {
+                    true => match old_value {
+                        Some(old_value) => DataType::BulkString(old_value),
+                        None => DataType::NullBulkString,
+                    },
+                    false => DataType::SimpleString("OK".to_string()),
+                }
             }
             Command::Get(key) => {
-                let map = shared_map.read().unwrap();
-                match map.get(&key) {
+                // Write lock here because get for now also removes expired keys
+                let mut map = shared_map.write().unwrap();
+                match map.get(key) {
                     Some(value) => DataType::BulkString(value.to_string()),
                     None => DataType::NullBulkString,
                 }
