@@ -10,26 +10,12 @@ use anyhow::{anyhow, Context};
 use cli_args::CliArgs;
 pub(crate) mod cli_args;
 pub(crate) mod command;
+pub(crate) mod hash;
 pub(crate) mod resp_parser;
 pub(crate) mod store;
 
 pub const LINE_ENDING: &str = "\r\n";
 pub const NEW_LINE: u8 = b'\n';
-
-#[test]
-fn test() {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap();
-    let test = std::time::Duration::from_millis(10);
-    let fut = now + test;
-    println!(
-        "now: {:?}, test: {:?}, fut: {:?}",
-        now.as_millis(),
-        test.as_millis(),
-        fut.as_millis()
-    )
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -37,6 +23,13 @@ async fn main() -> anyhow::Result<()> {
 
     let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
     let cmd_args = Arc::new(CliArgs::get()?);
+    if cmd_args.get("--replicaof").is_none() {
+        let hash = hash::generate_random_string();
+        shared_map
+            .write()
+            .unwrap()
+            .set("__$$__hash".to_string(), hash, None);
+    }
     let default_port = "6379".to_string();
     let port = match cmd_args.get("--port") {
         Some(CliArgs::Port(port)) => port,
@@ -97,10 +90,17 @@ fn parse_tcp_stream(
             }
             Command::Info(_) => {
                 let is_replica = cmd_args.get("--replicaof").is_some();
-                DataType::BulkString(format!(
-                    "# Replication{LINE_ENDING}role:{}{LINE_ENDING}",
-                    if is_replica { "slave" } else { "master" }
-                ))
+                let mut msg = vec![
+                    format!("# Replication"),
+                    format!("role:{}", if is_replica { "slave" } else { "master" }),
+                ];
+                if !is_replica {
+                    let mut map = shared_map.write().unwrap();
+                    let master_replid = map.get("__$$__hash".to_string()).unwrap();
+                    msg.push(format!("master_replid:{}", master_replid));
+                    msg.push(format!("master_repl_offset:{}", "0"))
+                }
+                DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
             }
             Command::Noop => {
                 // Do nothing
