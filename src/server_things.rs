@@ -76,8 +76,9 @@ fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
     let base64 = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
     let decoded_base64 = BASE64_STANDARD.decode(base64).unwrap();
     println!("🙏 >>> Sending RDB to replica: {:?}", decoded_base64.len());
-    stream.write(format!("${}{LINE_ENDING}", decoded_base64.len()).as_bytes())?;
-    stream.write_all(&decoded_base64)?;
+    let d_type = DataType::NotBulkString(decoded_base64);
+    // stream.write(format!("${}{LINE_ENDING}", decoded_base64.len()).as_bytes())?;
+    stream.write_all(&d_type.as_bytes())?;
     Ok(())
 }
 

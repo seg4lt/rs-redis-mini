@@ -19,7 +19,11 @@ impl DataType {
             DataType::BulkString(s) => {
                 format!("${}{LINE_ENDING}{}{LINE_ENDING}", s.len(), s).into_bytes()
             }
-            DataType::NotBulkString(s) => format!("${}{LINE_ENDING}{}", s.len(), "").into_bytes(),
+            DataType::NotBulkString(s) => {
+                let mut result = format!("${}{LINE_ENDING}", s.len()).into_bytes();
+                result.extend(s);
+                return result;
+            }
             DataType::NullBulkString => format!("${}{LINE_ENDING}", "-1").into_bytes(),
             DataType::Array(items) => {
                 let mut result = Vec::from(format!("*{}{LINE_ENDING}", items.len()).into_bytes());
@@ -86,7 +90,7 @@ impl DataType {
             .context("Unable to read content of bulk string")?;
         if read_count == length {
             println!("⭕️ >>> LINE_ENDING not found, setting the type to NotBulkString");
-            return Ok(DataType::NotBulkString(content_buf));
+            return Ok(DataType::NotBulkString(content_buf[..(length)].to_vec()));
         }
         match String::from_utf8(content_buf.clone()).context("Unable to convert buffer to utf8") {
             Ok(content) => Ok(DataType::BulkString(content[..length].to_string())),
