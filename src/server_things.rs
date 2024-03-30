@@ -101,8 +101,8 @@ fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
         "🙏 >>> ToReplica: {:?} <<<",
         std::str::from_utf8(&decoded_hex)
     );
-    stream.write(format!("{}{LINE_ENDING}", decoded_hex.len()).as_bytes())?;
-    stream.write(&decoded_hex);
+    stream.write(format!("${}{LINE_ENDING}", decoded_hex.len()).as_bytes())?;
+    stream.write(&decoded_hex)?;
     stream.write_all(&[b'\n'])?;
     Ok(())
 }
