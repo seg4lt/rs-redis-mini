@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::collections::HashMap;
 
 use anyhow::{anyhow, Context, Ok};
 
@@ -8,7 +8,8 @@ use crate::resp_parser::DataType;
 pub enum Command {
     Ping(Option<String>),
     Echo(String),
-    Set(String, String, bool, Option<Duration>),
+    // key, value, extra flags
+    Set(String, String, Option<HashMap<String, String>>),
     Get(String),
     Info(Option<String>),
     ReplConf(String, String),
@@ -138,22 +139,22 @@ impl Command {
             Some(DataType::BulkString(value)) => value,
             _ => return Err(anyhow!("Value must be of type BulkString")),
         };
-        let mut do_get = false;
-        let mut exp_time: Option<Duration> = None;
+        let mut extra_flags: HashMap<String, String> = HashMap::new();
         let mut i = 2;
         while i < args.len() {
             match args.get(i) {
                 Some(DataType::BulkString(flag)) => match flag.to_lowercase().as_str() {
                     "get" => {
-                        do_get = true;
+                        extra_flags.insert("get".into(), "true".into());
                     }
                     "ex" | "px" => {
                         i += 1;
-                        exp_time = Self::parse_set_cmd_exp_time_flag(
-                            flag.to_lowercase().as_str(),
-                            i,
-                            args,
-                        )?;
+                        let value = args
+                            .get(i)
+                            .ok_or_else(|| anyhow!("Flag must have a value"))?;
+                        let value = value.as_bytes();
+                        let value = String::from_utf8(value)?;
+                        extra_flags.insert(flag.to_lowercase(), value);
                     }
                     _ => Err(anyhow!("Unknown flag sent to SET command"))?,
                 },
@@ -161,38 +162,17 @@ impl Command {
             }
             i += 1;
         }
-        return Ok(Command::Set(
-            key.to_owned(),
-            value.to_owned(),
-            do_get,
-            exp_time,
-        ));
-    }
-    fn parse_set_cmd_exp_time_flag(
-        flag: &str,
-        value_idx: usize,
-        args: &[DataType],
-    ) -> anyhow::Result<Option<Duration>> {
-        let value = args
-            .get(value_idx)
-            .ok_or_else(|| anyhow!(format!("{} flag must have a value", flag)))?;
-        match value {
-            DataType::BulkString(value) => {
-                let value = value.parse::<u64>().context("Unable to parse value")?;
-                match flag {
-                    "px" => Ok(Some(Duration::from_millis(value))),
-                    "ex" => Ok(Some(Duration::from_secs(value))),
-                    _ => Err(anyhow!("Unknown flag for SET command")),
-                }
-            }
-            _ => Err(anyhow!("Ex flag value must be a bulk string"))?,
-        }
+        let extra_flags = if extra_flags.len() == 0 {
+            None
+        } else {
+            Some(extra_flags)
+        };
+        return Ok(Command::Set(key.to_owned(), value.to_owned(), extra_flags));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
 
     use crate::command::Command;
     use crate::resp_parser::DataType;
@@ -224,7 +204,7 @@ mod tests {
                     DataType::BulkString("key".into()),
                     DataType::BulkString("value".into()),
                 ]),
-                expected: Command::Set("key".into(), "value".into(), false, None),
+                expected: Command::Set("key".into(), "value".into(), None),
             },
             Test {
                 input: DataType::Array(vec![
@@ -244,8 +224,7 @@ mod tests {
                 expected: Command::Set(
                     "key".into(),
                     "value".into(),
-                    false,
-                    Some(Duration::from_secs(1000)),
+                    Some(vec![("ex".into(), "1000".into())].into_iter().collect()),
                 ),
             },
             Test {

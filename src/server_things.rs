@@ -1,16 +1,16 @@
 use anyhow::{anyhow, Context};
-use base64::prelude::*;
 use std::{
     collections::HashMap,
     io::Write,
     net::TcpStream,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 
 use crate::{
     cli_args::CliArgs,
     command::Command,
+    master_things,
     resp_parser::DataType,
     store::{Store, KEY_IS_MASTER, KEY_MASTER_REPL_OFFSET, KEY_REPLICA_PORT},
 };
@@ -20,6 +20,7 @@ pub fn parse_tcp_stream(
     mut stream: TcpStream,
     map: Arc<RwLock<Store>>,
     cmd_args: Arc<HashMap<String, CliArgs>>,
+    replicas: Arc<Mutex<Vec<TcpStream>>>,
 ) -> anyhow::Result<()> {
     loop {
         {
@@ -35,13 +36,19 @@ pub fn parse_tcp_stream(
         let msg = match &command {
             Command::Ping(_) => DataType::SimpleString("PONG".into()),
             Command::Echo(value) => DataType::SimpleString(value.clone()),
-            Command::Set(key, value, do_get, exp_time) => {
-                process_set_cmd(&map, key, value, do_get, exp_time)?
-            }
+            Command::Set(key, value, flags) => process_set_cmd(&map, key, value, flags)?,
             Command::Get(key) => process_get_cmd(&map, key)?,
             Command::Info(_) => process_info_cmd(&map, &cmd_args),
             Command::ReplConf(option, value) => process_replconf_cmd(option, value, &map)?,
-            Command::PSync(_, _) => process_psync_cmd(&map)?,
+            Command::PSync(_, _) => {
+                // Add replica to lis when PSYNC is called
+                // replicas.lock().unwrap().push(stream.try_clone()?);
+                replicas
+                    .lock()
+                    .unwrap()
+                    .push(stream.try_clone().context("Failed to clone the stream")?);
+                process_psync_cmd(&map)?
+            }
             Command::Noop => {
                 println!("🙏 >>> Noop command <<<");
                 // Do nothing
@@ -57,28 +64,8 @@ pub fn parse_tcp_stream(
         stream
             .write_all(&msg.as_bytes())
             .context("Unable to write to TcpStream")?;
-        do_follow_up_if_needed(&command, &mut stream)?;
+        master_things::do_follow_up_if_needed(&command, &map, &replicas)?;
     }
-    Ok(())
-}
-
-fn do_follow_up_if_needed(command: &Command, stream: &mut TcpStream) -> anyhow::Result<()> {
-    match command {
-        Command::PSync(_, _) => {
-            send_rdb_to_replica(stream)?;
-        }
-        _ => {}
-    };
-    Ok(())
-}
-
-fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
-    let base64 = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
-    let decoded_base64 = BASE64_STANDARD.decode(base64).unwrap();
-    println!("🙏 >>> Sending RDB to replica: {:?}", decoded_base64.len());
-    let d_type = DataType::NotBulkString(decoded_base64);
-    // stream.write(format!("${}{LINE_ENDING}", decoded_base64.len()).as_bytes())?;
-    stream.write_all(&d_type.as_bytes())?;
     Ok(())
 }
 
@@ -144,18 +131,45 @@ fn process_set_cmd(
     map: &Arc<RwLock<Store>>,
     key: &String,
     value: &String,
-    do_get: &bool,
-    exp_time: &Option<Duration>,
+    flags: &Option<HashMap<String, String>>,
 ) -> anyhow::Result<DataType> {
     let mut map = map.write().unwrap();
-    let old_value = map.get(key.clone());
-    map.set(key.clone(), value.clone(), exp_time.clone());
-    let msg = match do_get {
-        true => match old_value {
-            Some(old_value) => DataType::BulkString(old_value),
-            None => DataType::NullBulkString,
-        },
-        false => DataType::SimpleString("OK".to_string()),
-    };
-    Ok(msg)
+
+    match flags {
+        None => {
+            map.set(key.clone(), value.clone(), None);
+            Ok(DataType::SimpleString("OK".to_string()))
+        }
+        Some(flags) => {
+            let mut exp_time = None;
+            let mut do_get = false;
+            for (key, value) in flags.iter() {
+                match key.as_str() {
+                    "get" => {
+                        do_get = true;
+                    }
+                    "ex" => {
+                        let time = value.parse::<u64>().context("Unable to parse time")?;
+                        exp_time = Some(Duration::from_secs(time));
+                    }
+                    "px" => {
+                        let time = value.parse::<u64>().context("Unable to parse time")?;
+                        exp_time = Some(Duration::from_millis(time));
+                    }
+                    _ => {
+                        todo!("SET doesn't understand the flag yet")
+                    }
+                }
+            }
+            let old_value = map.get(key.clone());
+            map.set(key.clone(), value.clone(), exp_time);
+            match do_get {
+                true => match old_value {
+                    Some(old_value) => Ok(DataType::BulkString(old_value)),
+                    None => Ok(DataType::NullBulkString),
+                },
+                false => Ok(DataType::SimpleString("OK".to_string())),
+            }
+        }
+    }
 }
