@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Context};
+use base64::prelude::*;
 use bytes::{BufMut, BytesMut};
 use std::{
     collections::HashMap,
-    io::Write,
+    io::{Read, Write},
     net::TcpStream,
     sync::{Arc, RwLock},
     time::Duration,
@@ -93,11 +94,15 @@ fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
 
         binary_string
     }
-    let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
-    let decoded_hex = hex_to_binary(hex);
-    let d_type = DataType::NotBulkString(decoded_hex);
-    println!("🙏 >>> ToReplica: {:?} <<<", d_type.to_string());
-    stream.write_all(d_type.to_string().as_bytes().as_ref())?;
+    let hex = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+    let decoded_hex = BASE64_STANDARD.decode(hex).unwrap();
+    // let d_type = DataType::NotBulkString(decoded_hex);
+    println!(
+        "🙏 >>> ToReplica: {:?} <<<",
+        std::str::from_utf8(&decoded_hex)
+    );
+    stream.write(format!("{}{LINE_ENDING}", decoded_hex.len()).as_bytes())?;
+    stream.write(&decoded_hex);
     stream.write_all(&[b'\n'])?;
     Ok(())
 }
