@@ -87,7 +87,7 @@ impl DataType {
         let mut buf = [0; 2];
         let read_count = reader.read(&mut buf)?;
         if read_count == 0 {
-            return Ok(DataType::NotBulkString(content));
+            return Ok(DataType::NotBulkString(vec![]));
         }
         Ok(DataType::BulkString(content[..content.len()].to_string()))
     }
