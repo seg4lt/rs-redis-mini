@@ -31,9 +31,13 @@ impl DataType {
     }
     pub fn parse<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let mut buf = [0; 1];
-        let read_count = reader
-            .read(&mut buf)
-            .context("Unable to read first byte which is used to determine data type")?;
+        let read_count = match reader.read(&mut buf) {
+            Ok(read_count) => read_count,
+            Err(_) => {
+                println!("⭕️ >>> Unable to read anything. Setting read count to 0");
+                0
+            }
+        };
         if read_count == 0 {
             // Unable to read anything, so noop is sent
             return Ok(DataType::Noop);

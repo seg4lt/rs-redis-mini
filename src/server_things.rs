@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context};
+use bytes::{BufMut, BytesMut};
 use std::{
     collections::HashMap,
     io::Write,
@@ -53,7 +54,9 @@ pub fn parse_tcp_stream(
         stream
             .write_all(msg.as_bytes())
             .context("Unable to write to TcpStream")?;
+        stream.flush().context("Unable to flush TcpStream")?;
         do_follow_up_if_needed(&command, &mut stream)?;
+        stream.flush().context("Unable to flush TcpStream")?;
     }
     Ok(())
 }
@@ -69,20 +72,33 @@ fn do_follow_up_if_needed(command: &Command, stream: &mut TcpStream) -> anyhow::
 }
 
 fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
-    pub fn decode_hex(s: &str) -> anyhow::Result<String> {
-        let r: String = (0..s.len())
+    pub fn decode_hex(s: &str) -> anyhow::Result<Vec<u8>> {
+        let r = (0..s.len())
             .step_by(2)
-            .map(|i| format!("0{:b}", u8::from_str_radix(&s[i..i + 2], 16).unwrap()))
-            .collect::<Vec<String>>()
-            .join(" ");
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect::<Vec<u8>>();
         Ok(r)
     }
-    let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
-    let bytes = decode_hex(hex)?;
-    let msg = DataType::NotBulkString(bytes);
+    fn hex_to_binary(hex_string: &str) -> String {
+        let mut binary_string = String::new();
 
-    println!("🙏 >>> ToReplica: {:?} <<<", msg.to_string());
-    stream.write_all(msg.to_string().as_bytes())?;
+        for hex_char in hex_string.chars() {
+            let nibble = match hex_char.to_digit(16) {
+                Some(n) => n as u8,
+                None => continue,
+            };
+
+            binary_string.push_str(&format!("{:04b}", nibble));
+        }
+
+        binary_string
+    }
+    let hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+    let decoded_hex = hex_to_binary(hex);
+    let d_type = DataType::NotBulkString(decoded_hex);
+    println!("🙏 >>> ToReplica: {:?} <<<", d_type.to_string());
+    stream.write_all(d_type.to_string().as_bytes().as_ref())?;
+    stream.write_all(&[b'\n'])?;
     Ok(())
 }
 

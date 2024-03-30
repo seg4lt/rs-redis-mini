@@ -51,8 +51,21 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
 
     println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
     stream.write_all(msg.to_string().as_ref())?;
-    let mut reader = std::io::BufReader::new(&stream);
-    let response = DataType::parse(&mut reader)?;
-    println!("🙏 >>> FromMaster: {:?} <<<", response.to_string());
+    loop {
+        let mut reader = std::io::BufReader::new(&stream);
+        match DataType::parse(&mut reader) {
+            Ok(response) => {
+                if response.to_string().is_empty() {
+                    break;
+                }
+                println!("🙏 >>> FromMaster: {:?} <<<", response.to_string())
+            }
+            Err(err) => {
+                println!("🙏 >>> ERROR: {:?} <<<", err);
+                break;
+            }
+        }
+    }
+    println!("⭕️ >>> Connection with master closed <<<");
     Ok(())
 }
