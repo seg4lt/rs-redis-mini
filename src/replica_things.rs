@@ -9,7 +9,7 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
     let mut stream = TcpStream::connect(server).context("Cannot connect to tcp stream")?;
 
     // Send PING to master
-    let msg = DataType::Array(vec![DataType::BulkString("PING".to_string())]);
+    let msg = DataType::Array(vec![DataType::BulkString("PING".into())]);
     println!("🙏 >>> ToMaster: {:?} <<<", msg.to_string());
     stream.write_all(msg.to_string().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
@@ -54,15 +54,20 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
     loop {
         let mut reader = std::io::BufReader::new(&stream);
         match DataType::parse(&mut reader) {
-            Ok(response) => {
-                if response.to_string().is_empty() {
-                    break;
-                }
-                println!("🙏 >>> FromMaster: {:?} <<<", response.to_string())
+            Ok(DataType::NotBulkString(data)) => {
+                println!("🙏 >>> FromMaster: NotBulkString {:?} <<<", data.len())
             }
             Err(err) => {
                 println!("🙏 >>> ERROR: {:?} <<<", err);
                 break;
+            }
+            Ok(DataType::Noop) => {
+                println!("🙏 >>> FromMaster: Noop <<<");
+                break;
+            }
+            Ok(d_type) => {
+                println!("🙏 >>> FromMaster: Don't know what to do {:?}<<<", d_type);
+                continue;
             }
         }
     }

@@ -48,16 +48,14 @@ pub fn parse_tcp_stream(
                 break;
             }
             #[allow(unreachable_patterns)]
-            _ => Err(anyhow!("Unknown command"))?,
+            _ => Err(anyhow!("Unknown command - can't do anything"))?,
         }
         .to_string();
         println!("🙏 >>> Response: {:?} <<<", msg);
         stream
             .write_all(msg.as_bytes())
             .context("Unable to write to TcpStream")?;
-        stream.flush().context("Unable to flush TcpStream")?;
         do_follow_up_if_needed(&command, &mut stream)?;
-        stream.flush().context("Unable to flush TcpStream")?;
     }
     Ok(())
 }
@@ -73,37 +71,11 @@ fn do_follow_up_if_needed(command: &Command, stream: &mut TcpStream) -> anyhow::
 }
 
 fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
-    pub fn decode_hex(s: &str) -> anyhow::Result<Vec<u8>> {
-        let r = (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-            .collect::<Vec<u8>>();
-        Ok(r)
-    }
-    fn hex_to_binary(hex_string: &str) -> String {
-        let mut binary_string = String::new();
-
-        for hex_char in hex_string.chars() {
-            let nibble = match hex_char.to_digit(16) {
-                Some(n) => n as u8,
-                None => continue,
-            };
-
-            binary_string.push_str(&format!("{:04b}", nibble));
-        }
-
-        binary_string
-    }
-    let hex = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
-    let decoded_hex = BASE64_STANDARD.decode(hex).unwrap();
-    // let d_type = DataType::NotBulkString(decoded_hex);
-    println!(
-        "🙏 >>> ToReplica: {:?} <<<",
-        std::str::from_utf8(&decoded_hex)
-    );
-    stream.write(format!("${}{LINE_ENDING}", decoded_hex.len()).as_bytes())?;
-    stream.write(&decoded_hex)?;
-    stream.write_all(&[b'\n'])?;
+    let base64 = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+    let decoded_base64 = BASE64_STANDARD.decode(base64).unwrap();
+    println!("🙏 >>> Sending RDB to replica: {:?}", decoded_base64.len());
+    stream.write(format!("${}{LINE_ENDING}", decoded_base64.len()).as_bytes())?;
+    stream.write_all(&decoded_base64)?;
     Ok(())
 }
 
