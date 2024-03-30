@@ -23,7 +23,10 @@ impl Command {
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
-        println!("🙏 >>> Command Request: {:?} <<<", data_type.to_string());
+        println!(
+            "🙏 >>> Command Request: {:?} <<<",
+            std::str::from_utf8(&data_type.as_bytes())?
+        );
         match data_type {
             DataType::Array(items) => {
                 if items.len() == 0 {

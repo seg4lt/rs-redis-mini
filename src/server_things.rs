@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Context};
 use base64::prelude::*;
-use bytes::{BufMut, BytesMut};
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::Write,
     net::TcpStream,
     sync::{Arc, RwLock},
     time::Duration,
@@ -19,7 +18,7 @@ use crate::{store::KEY_MASTER_REPLID, LINE_ENDING};
 
 pub fn parse_tcp_stream(
     mut stream: TcpStream,
-    shared_map: Arc<RwLock<Store>>,
+    map: Arc<RwLock<Store>>,
     cmd_args: Arc<HashMap<String, CliArgs>>,
 ) -> anyhow::Result<()> {
     loop {
@@ -29,19 +28,20 @@ pub fn parse_tcp_stream(
             // let mut buf = [0; 256];
             // stream.read(&mut buf)?;
             // println!("Content: {:?}", std::str::from_utf8(&buf).unwrap());
+            // anyhow::bail!("^^^^_________ message node received");
         }
-        let mut reader: std::io::BufReader<&TcpStream> = std::io::BufReader::new(&stream);
+        let mut reader = std::io::BufReader::new(&stream);
         let command = Command::parse_with_reader(&mut reader)?;
         let msg = match &command {
-            Command::Ping(_) => DataType::SimpleString("PONG".to_string()),
+            Command::Ping(_) => DataType::SimpleString("PONG".into()),
             Command::Echo(value) => DataType::SimpleString(value.clone()),
             Command::Set(key, value, do_get, exp_time) => {
-                process_set_cmd(&shared_map, key, value, do_get, exp_time)?
+                process_set_cmd(&map, key, value, do_get, exp_time)?
             }
-            Command::Get(key) => process_get_cmd(&shared_map, key)?,
-            Command::Info(_) => process_info_cmd(&shared_map, &cmd_args),
-            Command::ReplConf(option, value) => process_replconf_cmd(option, value, &shared_map)?,
-            Command::PSync(_, _) => process_psync_cmd(&shared_map)?,
+            Command::Get(key) => process_get_cmd(&map, key)?,
+            Command::Info(_) => process_info_cmd(&map, &cmd_args),
+            Command::ReplConf(option, value) => process_replconf_cmd(option, value, &map)?,
+            Command::PSync(_, _) => process_psync_cmd(&map)?,
             Command::Noop => {
                 println!("🙏 >>> Noop command <<<");
                 // Do nothing
@@ -49,11 +49,13 @@ pub fn parse_tcp_stream(
             }
             #[allow(unreachable_patterns)]
             _ => Err(anyhow!("Unknown command - can't do anything"))?,
-        }
-        .to_string();
-        println!("🙏 >>> Response: {:?} <<<", msg);
+        };
+        println!(
+            "🙏 >>> Response: {:?} <<<",
+            std::str::from_utf8(&msg.as_bytes()).unwrap()
+        );
         stream
-            .write_all(msg.as_bytes())
+            .write_all(&msg.as_bytes())
             .context("Unable to write to TcpStream")?;
         do_follow_up_if_needed(&command, &mut stream)?;
     }
@@ -94,8 +96,8 @@ fn process_replconf_cmd(
     Ok(DataType::SimpleString("OK".to_string()))
 }
 
-fn process_psync_cmd(shared_map: &Arc<RwLock<Store>>) -> anyhow::Result<DataType> {
-    let mut map = shared_map.write().unwrap();
+fn process_psync_cmd(map: &Arc<RwLock<Store>>) -> anyhow::Result<DataType> {
+    let mut map = map.write().unwrap();
     map.get(KEY_IS_MASTER.into())
         .ok_or_else(|| anyhow!("Not a master"))?;
     let master_replid = map
@@ -109,7 +111,7 @@ fn process_psync_cmd(shared_map: &Arc<RwLock<Store>>) -> anyhow::Result<DataType
 }
 
 fn process_info_cmd(
-    shared_map: &Arc<RwLock<Store>>,
+    map: &Arc<RwLock<Store>>,
     cmd_args: &Arc<HashMap<String, CliArgs>>,
 ) -> DataType {
     let is_replica = cmd_args.get("--replicaof").is_some();
@@ -118,7 +120,7 @@ fn process_info_cmd(
         format!("role:{}", if is_replica { "slave" } else { "master" }),
     ];
     if !is_replica {
-        let mut map = shared_map.write().unwrap();
+        let mut map = map.write().unwrap();
         let master_replid = map.get(KEY_MASTER_REPLID.into()).unwrap();
         let master_repl_offset = map.get(KEY_MASTER_REPL_OFFSET.into()).unwrap_or("0".into());
         msg.push(format!("master_replid:{}", master_replid));
@@ -127,9 +129,9 @@ fn process_info_cmd(
     DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
 }
 
-fn process_get_cmd(shared_map: &Arc<RwLock<Store>>, key: &String) -> anyhow::Result<DataType> {
+fn process_get_cmd(map: &Arc<RwLock<Store>>, key: &String) -> anyhow::Result<DataType> {
     // Write lock here because get for now also removes expired keys
-    let mut map = shared_map.write().unwrap();
+    let mut map = map.write().unwrap();
     let msg = match map.get(key.clone()) {
         Some(value) => DataType::BulkString(value.to_string()),
         None => DataType::NullBulkString,
@@ -138,13 +140,13 @@ fn process_get_cmd(shared_map: &Arc<RwLock<Store>>, key: &String) -> anyhow::Res
 }
 
 fn process_set_cmd(
-    shared_map: &Arc<RwLock<Store>>,
+    map: &Arc<RwLock<Store>>,
     key: &String,
     value: &String,
     do_get: &bool,
     exp_time: &Option<Duration>,
 ) -> anyhow::Result<DataType> {
-    let mut map = shared_map.write().unwrap();
+    let mut map = map.write().unwrap();
     let old_value = map.get(key.clone());
     map.set(key.clone(), value.clone(), exp_time.clone());
     let msg = match do_get {

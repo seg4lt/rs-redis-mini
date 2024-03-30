@@ -13,20 +13,22 @@ pub enum DataType {
 }
 
 impl DataType {
-    pub fn to_string(&self) -> String {
-        match self {
-            DataType::SimpleString(s) => format!("+{}{LINE_ENDING}", s),
-            DataType::BulkString(s) => format!("${}{LINE_ENDING}{}{LINE_ENDING}", s.len(), s),
-            DataType::NotBulkString(s) => format!("${}{LINE_ENDING}{}", s.len(), ""),
-            DataType::NullBulkString => format!("${}{LINE_ENDING}", "-1"),
+    pub fn as_bytes(&self) -> Vec<u8> {
+        match &self {
+            DataType::SimpleString(s) => format!("+{}{LINE_ENDING}", s).into_bytes(),
+            DataType::BulkString(s) => {
+                format!("${}{LINE_ENDING}{}{LINE_ENDING}", s.len(), s).into_bytes()
+            }
+            DataType::NotBulkString(s) => format!("${}{LINE_ENDING}{}", s.len(), "").into_bytes(),
+            DataType::NullBulkString => format!("${}{LINE_ENDING}", "-1").into_bytes(),
             DataType::Array(items) => {
-                let mut result = format!("*{}{LINE_ENDING}", items.len());
+                let mut result = Vec::from(format!("*{}{LINE_ENDING}", items.len()).into_bytes());
                 for item in items {
-                    result.push_str(&item.to_string());
+                    result.extend(item.as_bytes())
                 }
                 result
             }
-            DataType::Noop => "".to_string(),
+            DataType::Noop => vec![],
         }
     }
     pub fn parse<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
