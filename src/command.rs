@@ -16,7 +16,7 @@ pub enum Command {
     ReplConf(String, String),
     PSync(String, String),
     Noop(String),
-    NoopEmptyString,
+    ConnectionClosed,
 }
 
 impl Command {
@@ -28,17 +28,15 @@ impl Command {
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
         info!("Parsing command - {data_type:?}{}", "");
         match data_type {
+            DataType::EmptyString => Ok(Command::ConnectionClosed),
             DataType::Array(items) => {
                 if items.len() == 0 {
                     bail!("Array must have at least one item");
                 }
                 Self::from(&items[0], &items[1..])
             }
-            DataType::EmptyString => Ok(Command::NoopEmptyString),
-            DataType::Noop | DataType::SimpleString(_) => {
-                Ok(Command::Noop("DT_Noop|SimpleString".into()))
-            }
-            DataType::NotBulkString(_) => Ok(Command::Noop("DT_NotBulkString".into())),
+            DataType::SimpleString(_) => Ok(Command::Noop("SimpleString".into())),
+            DataType::RDSFile(_) => Ok(Command::Noop("RDSFile".into())),
             foo => bail!("Don't know how to process this command. Found {foo:?}"),
         }
     }
@@ -55,7 +53,7 @@ impl Command {
             "info" => Self::parse_info_cmd(args),
             "replconf" => Self::parse_replconf_cmd(args),
             "psync" => Self::parse_psync_cmd(args),
-            _ => bail!("Unknown command"),
+            foo => bail!("Unknown command - {foo}"),
         }
     }
     fn parse_psync_cmd(args: &[DataType]) -> anyhow::Result<Command> {
@@ -112,7 +110,6 @@ impl Command {
             _ => bail!("Echo args must be bulk string"),
         }
     }
-
     fn parse_ping_cmd(args: &[DataType]) -> anyhow::Result<Command> {
         if args.len() > 1 {
             bail!("Ping command must have at most one argument");

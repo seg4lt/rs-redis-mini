@@ -74,7 +74,7 @@ pub fn sync_with_master(
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader).context(fdbg!("Unable to read RDS content"))?;
     match response {
-        DataType::NotBulkString(_) => {}
+        DataType::RDSFile(_) => {}
         d_type => bail!("Did not receive a valid RDS from master - {:?}", d_type),
     }
     loop {

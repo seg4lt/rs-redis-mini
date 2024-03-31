@@ -1,5 +1,5 @@
 use anyhow::{bail, Context};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{fdbg, LINE_ENDING, NEW_LINE};
 
@@ -8,9 +8,9 @@ pub enum DataType {
     SimpleString(String),
     BulkString(String),
     NullBulkString,
-    NotBulkString(Vec<u8>),
     Array(Vec<DataType>),
-    Noop,
+    // Noop,
+    RDSFile(Vec<u8>),
     EmptyString,
 }
 
@@ -21,7 +21,7 @@ impl DataType {
             DataType::BulkString(s) => {
                 format!("${}{LINE_ENDING}{}{LINE_ENDING}", s.len(), s).into_bytes()
             }
-            DataType::NotBulkString(s) => {
+            DataType::RDSFile(s) => {
                 let mut result = format!("${}{LINE_ENDING}", s.len()).into_bytes();
                 result.extend(s);
                 return result;
@@ -34,7 +34,7 @@ impl DataType {
                 }
                 result
             }
-            DataType::Noop | DataType::EmptyString => vec![],
+            DataType::EmptyString => unimplemented!("EmptyString should not be bytes"),
         }
     }
     pub fn parse<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -57,7 +57,7 @@ impl DataType {
             }
             b'+' => DataType::parse_simple_string(reader)
                 .context(fdbg!("Unable to parse simple string")),
-            _ => bail!("Unknown DataType"),
+            _ => unimplemented!("Converting this data type is not implemented yet!!!"),
         }
     }
     fn parse_simple_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -68,11 +68,10 @@ impl DataType {
         if read_count == 0 {
             bail!("Zero bytes read - unable to read simple string");
         }
-        Ok(DataType::SimpleString(
-            std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
-                .context(fdbg!("Unable to convert simple string buffer to string"))?
-                .to_string(),
-        ))
+        let msg = std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
+            .context(fdbg!("Unable to convert simple string buffer to string"))?
+            .to_string();
+        Ok(DataType::SimpleString(msg))
     }
     fn parse_array<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let length =
@@ -93,22 +92,23 @@ impl DataType {
         let read_count = reader
             .read(&mut content_buf)
             .context(fdbg!("Unable to read content of bulk string"))?;
-        if read_count == length {
-            warn!("LINE_ENDING not found, setting the type to NotBulkString");
-            return Ok(DataType::NotBulkString(content_buf[..(length)].to_vec()));
-        }
-        match String::from_utf8(content_buf[..length].to_vec()).context(fdbg!(
-            "Unable to convert buffer to utf8 - Len({}) - Read({})",
-            length,
-            read_count
-        )) {
-            Ok(content) => Ok(DataType::BulkString(content.to_string())),
-            Err(err) => {
-                bail!("Unable to read bulk string, {:?}", err)
+        let d_type = match read_count {
+            0 => bail!("Zero bytes read - unable to read bulk string"),
+            _ if read_count == length => {
+                info!("Looks like RDS file, did not read CRLF");
+                DataType::RDSFile(content_buf[..(length)].to_vec())
             }
-        }
+            _ => {
+                let content = String::from_utf8(content_buf[..length].to_vec()).context(fdbg!(
+                    "Unable to convert buffer to utf8 - Len({}) - Read({})",
+                    length,
+                    read_count
+                ))?;
+                DataType::BulkString(content)
+            }
+        };
+        Ok(d_type)
     }
-
     fn read_count<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<usize> {
         let mut buf = vec![];
         let read_count = reader

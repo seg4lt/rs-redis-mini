@@ -51,7 +51,7 @@ fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
         "[Master] Sending RDB to replica - Length({})",
         decoded_base64.len()
     );
-    let d_type = DataType::NotBulkString(decoded_base64);
+    let d_type = DataType::RDSFile(decoded_base64);
     stream.write_all(&d_type.as_bytes())?;
     Ok(())
 }
@@ -77,12 +77,12 @@ fn broadcast_set_cmd(
                 items.push(DataType::BulkString(value.into()));
             }
             _ => {
-                todo!("SET doesn't understand the flag yet")
+                info!("SET doesn't understand the flag yet")
             }
         });
     }
     let d_type = DataType::Array(items);
-    info!("[Master] Broadcasting SET command - {d_type:?}");
+    info!("Broadcasting SET command - {d_type:?}");
     stream.write_all(&d_type.as_bytes())?;
     Ok(())
 }

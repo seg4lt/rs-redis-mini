@@ -24,14 +24,15 @@ pub fn process_cmd(
     cmd_args: &Arc<HashMap<String, CliArgs>>,
     replicas: Option<&Arc<Mutex<Vec<TcpStream>>>>,
 ) -> anyhow::Result<Option<DataType>> {
-    let msg = match cmd {
+    let ret_data_type = match cmd {
         Command::Ping(_) => DataType::SimpleString("PONG".into()),
         Command::Echo(value) => DataType::SimpleString(value.clone()),
         Command::Set(key, value, flags) => process_set_cmd(&map, key, value, flags)?,
         Command::Get(key) => process_get_cmd(&map, key)?,
         Command::Info(_) => process_info_cmd(&map, &cmd_args),
-        Command::ReplConf(option, value) => process_replconf_cmd(option, value, &map)?,
+        Command::ReplConf(option, value) => process_replconf_cmd(option, value, &map),
         Command::PSync(_, _) => {
+            let ret_cmd = process_psync_cmd(&map)?;
             // Add replica to lis when PSYNC is called
             if let Some(replicas) = replicas {
                 // TODO: Remove replicas when they go down
@@ -41,23 +42,19 @@ pub fn process_cmd(
                         .context(fdbg!("Failed to clone the stream"))?,
                 );
             }
-            process_psync_cmd(&map)?
+            ret_cmd
         }
-        Command::NoopEmptyString => DataType::EmptyString,
+        Command::ConnectionClosed => DataType::EmptyString,
         Command::Noop(comment) => {
             info!("Received Noop command - {:?} <<<", comment);
             // Do nothing
             return Ok(None);
         }
     };
-    Ok(Some(msg))
+    Ok(Some(ret_data_type))
 }
 
-fn process_replconf_cmd(
-    option: &String,
-    value: &String,
-    map: &Arc<RwLock<Store>>,
-) -> anyhow::Result<DataType> {
+fn process_replconf_cmd(option: &String, value: &String, map: &Arc<RwLock<Store>>) -> DataType {
     match option.as_str() {
         "listening-port" => {
             let mut map = map.write().unwrap();
@@ -65,7 +62,7 @@ fn process_replconf_cmd(
         }
         _ => {}
     }
-    Ok(DataType::SimpleString("OK".to_string()))
+    DataType::SimpleString("OK".to_string())
 }
 
 fn process_psync_cmd(map: &Arc<RwLock<Store>>) -> anyhow::Result<DataType> {
@@ -145,7 +142,7 @@ fn process_set_cmd(
                         exp_time = Some(Duration::from_millis(time));
                     }
                     _ => {
-                        todo!("SET doesn't understand the flag yet")
+                        unimplemented!("SET doesn't understand the flag yet")
                     }
                 }
             }
