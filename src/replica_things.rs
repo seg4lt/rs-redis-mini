@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::Context;
+use tracing::info;
 
 use crate::{
     cli_args::CliArgs, cmd_processor, command::Command, fdbg, resp_parser::DataType, store::Store,
@@ -26,7 +27,7 @@ pub fn sync_with_master(
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    println!("🙏 >>> FromMaster: {:?} <<<", response);
+    info!("🙏 >>> FromMaster: {:?} <<<", response);
 
     // Send REPLCONF listening-port <port>
     let msg = DataType::Array(vec![
@@ -35,11 +36,11 @@ pub fn sync_with_master(
         DataType::BulkString(format!("{}", port)),
     ]);
 
-    println!("🙏 >>> ToMaster: {:?} <<<", msg);
+    info!("🙏 >>> ToMaster: {:?} <<<", msg);
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    println!("🙏 >>> FromMaster: {:?} <<<", response);
+    info!("🙏 >>> FromMaster: {:?} <<<", response);
 
     // Send REPLCONF capa psync2
     let msg = DataType::Array(vec![
@@ -48,11 +49,11 @@ pub fn sync_with_master(
         DataType::BulkString("psync2".to_string()),
     ]);
 
-    println!("🙏 >>> ToMaster: {:?} <<<", msg);
+    info!("🙏 >>> ToMaster: {:?} <<<", msg);
     stream.write_all(&msg.as_bytes())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    println!("🙏 >>> FromMaster: {:?} <<<", response);
+    info!("🙏 >>> FromMaster: {:?} <<<", response);
 
     // Sendc PSYNC <master_replid> <offset>
     let msg = DataType::Array(vec![
@@ -61,10 +62,10 @@ pub fn sync_with_master(
         DataType::BulkString("-1".to_string()),
     ]);
 
-    println!("🙏 >>> ToMaster: {:?} <<<", msg);
+    info!("🙏 >>> ToMaster: {:?} <<<", msg);
     stream.write_all(&msg.as_bytes())?;
     loop {
-        println!("🙏 >>> Starting Master Work <<<",);
+        info!("🙏 >>> Starting Master Work <<<",);
         let mut reader = std::io::BufReader::new(&stream);
         let cmd = Command::parse_with_reader(&mut reader)
             .context(fdbg!("Replica command parse error"))?;
@@ -76,9 +77,9 @@ pub fn sync_with_master(
         if let Some(DataType::EmptyString) = msg {
             break;
         }
-        println!("Received from master {:?}", msg);
-        println!("🙏 >>> Finished Master Work <<<",);
+        info!("Received from master {:?}", msg);
+        info!("🙏 >>> Finished Master Work <<<",);
     }
-    println!("⭕️ >>> Connection with master closed <<<");
+    info!("⭕️ >>> Connection with master closed <<<");
     Ok(())
 }

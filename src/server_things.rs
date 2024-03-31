@@ -5,6 +5,7 @@ use std::{
     net::TcpStream,
     sync::{Arc, Mutex, RwLock},
 };
+use tracing::info;
 
 use crate::{
     cli_args::CliArgs, cmd_processor, command::Command, fdbg, master_things, store::Store,
@@ -22,7 +23,7 @@ pub fn parse_tcp_stream(
             // use std::io::Read;
             // let mut buf = [0; 256];
             // stream.read(&mut buf)?;
-            // println!("Content: {:?}", std::str::from_utf8(&buf).unwrap());
+            // info!("Content: {:?}", std::str::from_utf8(&buf).unwrap());
             // anyhow::bail!("^^^^_________ message node received");
         }
         let mut reader = std::io::BufReader::new(&stream);
@@ -32,7 +33,7 @@ pub fn parse_tcp_stream(
         else {
             break;
         };
-        println!(
+        info!(
             "🙏 >>> Response: {:?} <<<",
             std::str::from_utf8(&msg.as_bytes()).unwrap()
         );

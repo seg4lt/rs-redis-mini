@@ -11,6 +11,7 @@ use crate::{
     store::{Store, KEY_IS_MASTER},
 };
 use base64::prelude::*;
+use tracing::info;
 
 pub fn do_follow_up_if_needed(
     command: &Command,
@@ -45,7 +46,7 @@ pub fn do_follow_up_if_needed(
 fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
     let base64 = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
     let decoded_base64 = BASE64_STANDARD.decode(base64).unwrap();
-    println!("🙏 >>> Sending RDB to replica: {:?}", decoded_base64.len());
+    info!("🙏 >>> Sending RDB to replica: {:?}", decoded_base64.len());
     let d_type = DataType::NotBulkString(decoded_base64);
     stream.write_all(&d_type.as_bytes())?;
     Ok(())
@@ -81,7 +82,7 @@ fn broadcast_set_cmd(
         });
     }
     let d_type = DataType::Array(items);
-    println!(
+    info!(
         "🙏 >>> Sending SET to replica: {:?}",
         String::from_utf8(d_type.as_bytes())
     );

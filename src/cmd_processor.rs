@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
+use tracing::info;
 
 use crate::{
     cli_args::CliArgs,
@@ -24,7 +25,7 @@ pub fn process_cmd(
     replicas: Option<&Arc<Mutex<Vec<TcpStream>>>>,
     is_server_cmd: bool,
 ) -> anyhow::Result<Option<DataType>> {
-    println!(
+    info!(
         "🔥 Processing command as a {}",
         if is_server_cmd { "server" } else { "client" }
     );
@@ -48,7 +49,7 @@ pub fn process_cmd(
             process_psync_cmd(&map)?
         }
         Command::Noop(comment) => {
-            println!("🙏 >>> Noop command - {:?} <<<", comment);
+            info!("🙏 >>> Noop command - {:?} <<<", comment);
             // Do nothing
             return Ok(None);
         }

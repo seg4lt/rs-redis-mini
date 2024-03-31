@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
+use tracing::{info, Level};
 pub(crate) mod cli_args;
 pub(crate) mod cmd_processor;
 pub(crate) mod command;
@@ -24,7 +25,8 @@ pub const NEW_LINE: u8 = b'\n';
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("Logs from your program will appear here!");
+    setup_log()?;
+    info!("Logs from your program will appear here!");
 
     // TODO: To many mutex / locks - will app bottleneck because thread can't get a lock?
     let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
@@ -67,5 +69,24 @@ async fn main() -> anyhow::Result<()> {
                 .expect("Server closed");
         });
     }
+    Ok(())
+}
+
+fn setup_log() -> anyhow::Result<()> {
+    let subscriber = tracing_subscriber::fmt()
+        // Use a more compact, abbreviated log format
+        .compact()
+        // Display source code file paths
+        .with_file(true)
+        // Display source code line numbers
+        .with_line_number(true)
+        // Display the thread ID an event was recorded on
+        .with_thread_ids(true)
+        // Don't display the event's target (module path)
+        .with_target(false)
+        // Build the subscriber
+        .with_max_level(Level::TRACE)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)?;
     Ok(())
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::anyhow;
+use tracing::debug;
 
 pub enum CliArgs {
     Port(String),
@@ -12,7 +13,7 @@ impl CliArgs {
         args.next();
         let mut map = HashMap::new();
         while let Some(arg) = args.next() {
-            println!("Processing arg: {}", arg);
+            debug!("Processing arg: {}", arg);
             let cli_arg = match arg.as_str() {
                 "--port" => match args.next() {
                     Some(port) => CliArgs::Port(port),

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context};
+use tracing::info;
 
 use crate::{fdbg, LINE_ENDING, NEW_LINE};
 
@@ -41,7 +42,7 @@ impl DataType {
         let read_count = match reader.read(&mut buf) {
             Ok(read_count) => read_count,
             Err(_) => {
-                println!("⭕️ >>> Unable to read anything. Setting read count to 0");
+                info!("⭕️ >>> Unable to read anything. Setting read count to 0");
                 0
             }
         };
@@ -49,7 +50,7 @@ impl DataType {
             // Unable to read anything, so noop is sent
             return Ok(DataType::EmptyString);
         }
-        // println!("⭕️ >>> Read: {:?}", buf[0] as char);
+        // info!("⭕️ >>> Read: {:?}", buf[0] as char);
         match &buf[0] {
             b'*' => DataType::parse_array(reader).context(fdbg!("Unable to parse array")),
             b'$' => {
@@ -94,7 +95,7 @@ impl DataType {
             .read(&mut content_buf)
             .context(fdbg!("Unable to read content of bulk string"))?;
         if read_count == length {
-            println!("⭕️ >>> LINE_ENDING not found, setting the type to NotBulkString");
+            info!("⭕️ >>> LINE_ENDING not found, setting the type to NotBulkString");
             return Ok(DataType::NotBulkString(content_buf[..(length)].to_vec()));
         }
         match String::from_utf8(content_buf.clone())

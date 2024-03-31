@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Context, Ok};
+use tracing::info;
 
 use crate::{fdbg, resp_parser::DataType};
 
@@ -25,7 +26,7 @@ impl Command {
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
-        println!("🙏 >>> Command Request: {:?} <<<", data_type);
+        info!("🙏 >>> Command Request: {:?} <<<", data_type);
         match data_type {
             DataType::Array(items) => {
                 if items.len() == 0 {
@@ -48,7 +49,7 @@ impl Command {
             DataType::BulkString(s) => s,
             _ => return Err(anyhow!("Command must be of type BulkString")),
         };
-        println!("🙏 >>> Command: {:?} <<<", command.to_lowercase());
+        info!("🙏 >>> Command: {:?} <<<", command.to_lowercase());
         match command.to_lowercase().as_ref() {
             "ping" => Self::parse_ping_cmd(args),
             "echo" => Self::parse_echo_cmd(args),
