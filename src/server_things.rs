@@ -8,7 +8,8 @@ use std::{
 use tracing::info;
 
 use crate::{
-    cli_args::CliArgs, cmd_processor, command::Command, fdbg, master_things, store::Store,
+    cli_args::CliArgs, cmd_processor, command::Command, fdbg, master_things, resp_parser::DataType,
+    store::Store,
 };
 
 pub fn parse_tcp_stream(
@@ -28,10 +29,15 @@ pub fn parse_tcp_stream(
         }
         let mut reader = std::io::BufReader::new(&stream);
         let command = Command::parse_with_reader(&mut reader)?;
-        let Some(msg) =
-            cmd_processor::process_cmd(&command, &stream, &map, &cmd_args, Some(&replicas))?
-        else {
-            break;
+        let msg = match cmd_processor::process_cmd(
+            &command,
+            &stream,
+            &map,
+            &cmd_args,
+            Some(&replicas),
+        )? {
+            None | Some(DataType::EmptyString) => break,
+            Some(msg) => msg,
         };
         info!("[server] response - {msg:?}");
         stream
