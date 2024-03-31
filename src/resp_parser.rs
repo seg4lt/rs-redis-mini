@@ -1,5 +1,5 @@
 use anyhow::{bail, Context};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{fdbg, LINE_ENDING, NEW_LINE};
 
@@ -92,6 +92,9 @@ impl DataType {
         let read_count = reader
             .read(&mut content_buf)
             .context(fdbg!("Unable to read content of bulk string"))?;
+        if read_count != length {
+            debug!("Last two digit {:?}", content_buf[length..].to_vec())
+        }
         let d_type = match read_count {
             0 => bail!("Zero bytes read - unable to read bulk string"),
             _ if read_count == length => {
