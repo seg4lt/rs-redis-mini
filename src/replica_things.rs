@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::Write,
+    io::{BufRead, BufReader, Write},
     net::TcpStream,
     sync::{Arc, RwLock},
 };
@@ -25,61 +25,11 @@ pub fn sync_with_master(
     let server = format!("{}:{}", ip, master_port);
     let mut stream = TcpStream::connect(&server).context(fdbg!("Cannot connect to tcp stream"))?;
     debug!("Connected with server = {server}");
+    handshake(&mut stream, &port)?;
 
-    let msg = DataType::Array(vec![DataType::BulkString("PING".into())]);
-    info!("{msg:?}");
-    stream.write_all(msg.as_bytes().as_ref())?;
-    let mut reader = std::io::BufReader::new(&stream);
-    let response = DataType::parse(&mut reader)?;
-    info!("Response {response:?}");
-
-    let msg = DataType::Array(vec![
-        DataType::BulkString("REPLCONF".to_string()),
-        DataType::BulkString("listening-port".to_string()),
-        DataType::BulkString(format!("{}", port)),
-    ]);
-
-    info!("To Master - {msg:?}");
-    stream.write_all(msg.as_bytes().as_ref())?;
-    let mut reader = std::io::BufReader::new(&stream);
-    let response = DataType::parse(&mut reader)?;
-    info!("Response - {response:?}");
-
-    let msg = DataType::Array(vec![
-        DataType::BulkString("REPLCONF".to_string()),
-        DataType::BulkString("capa".to_string()),
-        DataType::BulkString("psync2".to_string()),
-    ]);
-
-    info!("To Master - {msg:?}");
-    stream.write_all(&msg.as_bytes())?;
-    let mut reader = std::io::BufReader::new(&stream);
-    let response = DataType::parse(&mut reader)?;
-    info!("Response - {response:?}");
-
-    let msg = DataType::Array(vec![
-        DataType::BulkString("PSYNC".to_string()),
-        DataType::BulkString("?".to_string()),
-        DataType::BulkString("-1".to_string()),
-    ]);
-
-    info!("To Master - {msg:?}");
-    stream.write_all(&msg.as_bytes())?;
-
-    let mut reader = std::io::BufReader::new(&stream);
-    let response = DataType::parse(&mut reader).context(fdbg!("Expected FULLRESYNC message"))?;
-    info!("Response - {response:?}");
-
-    // RDS file
-    let mut reader = std::io::BufReader::new(&stream);
-    let response = DataType::parse(&mut reader).context(fdbg!("Unable to read RDS content"))?;
-    match response {
-        DataType::RDSFile(_) => {}
-        d_type => bail!("Did not receive a valid RDS from master - {:?}", d_type),
-    }
     loop {
         info!("Waiting for master response");
-        let mut reader = std::io::BufReader::new(&stream);
+        let mut reader = BufReader::new(&stream);
         let cmd = Command::parse_with_reader(&mut reader).context(fdbg!("command parse error"))?;
         let msg = match cmd_processor::process_cmd(&cmd, &stream, &map, &args, None)
             .context(fdbg!("command process error"))
@@ -97,4 +47,60 @@ pub fn sync_with_master(
     }
     warn!("Connection with master closed");
     Ok(())
+}
+
+fn handshake(mut stream: &mut TcpStream, port: &String) -> anyhow::Result<()> {
+    // PING
+    let msg = DataType::Array(vec![DataType::BulkString("PING".into())]);
+    info!("Response {msg:?}");
+    stream.write_all(msg.as_bytes().as_ref())?;
+    let mut reader = BufReader::new(&mut stream);
+    let response = DataType::parse(&mut reader)?;
+    info!("Response {response:?}");
+
+    // REPLCONF
+    let msg = DataType::Array(vec![
+        DataType::BulkString("REPLCONF".to_string()),
+        DataType::BulkString("listening-port".to_string()),
+        DataType::BulkString(format!("{}", port)),
+    ]);
+    info!("To Master - {msg:?}");
+    stream.write_all(msg.as_bytes().as_ref())?;
+    let mut reader = BufReader::new(&mut stream);
+    let response = DataType::parse(&mut reader)?;
+    info!("Response - {response:?}");
+
+    // REPLCONF capa psync2
+    let msg = DataType::Array(vec![
+        DataType::BulkString("REPLCONF".to_string()),
+        DataType::BulkString("capa".to_string()),
+        DataType::BulkString("psync2".to_string()),
+    ]);
+
+    info!("To Master - {msg:?}");
+    stream.write_all(&msg.as_bytes())?;
+    let mut reader = BufReader::new(&mut stream);
+    let response = DataType::parse(&mut reader)?;
+    info!("Response - {response:?}");
+
+    // PSYNC
+    let msg = DataType::Array(vec![
+        DataType::BulkString("PSYNC".to_string()),
+        DataType::BulkString("?".to_string()),
+        DataType::BulkString("-1".to_string()),
+    ]);
+
+    info!("To Master - {msg:?}");
+    stream.write_all(&msg.as_bytes())?;
+    let mut reader = BufReader::new(&mut stream);
+    let response = DataType::parse(&mut reader).context(fdbg!("Expected FULLRESYNC message"))?;
+    info!("Response - {response:?}");
+
+    // RDS file
+    let mut reader = BufReader::new(&mut stream);
+    let response = DataType::parse(&mut reader).context(fdbg!("Unable to read RDS content"))?;
+    match response {
+        DataType::RDSFile(_) => Ok(()),
+        d_type => bail!("Did not receive a valid RDS from master - {:?}", d_type),
+    }
 }
