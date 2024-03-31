@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::Context;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::{
     cli_args::CliArgs, cmd_processor, command::Command, fdbg, resp_parser::DataType, store::Store,
@@ -20,66 +20,68 @@ pub fn sync_with_master(
     args: Arc<HashMap<String, CliArgs>>,
 ) -> anyhow::Result<()> {
     let server = format!("{}:{}", ip, master_port);
-    let mut stream = TcpStream::connect(server).context(fdbg!("Cannot connect to tcp stream"))?;
+    let mut stream = TcpStream::connect(&server).context(fdbg!("Cannot connect to tcp stream"))?;
+    debug!("Connected with server = {server}");
 
-    // Send PING to master
     let msg = DataType::Array(vec![DataType::BulkString("PING".into())]);
+    info!("[Replica] {msg:?}");
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    info!("🙏 >>> FromMaster: {:?} <<<", response);
+    info!("[Replica] Response {response:?}");
 
-    // Send REPLCONF listening-port <port>
     let msg = DataType::Array(vec![
         DataType::BulkString("REPLCONF".to_string()),
         DataType::BulkString("listening-port".to_string()),
         DataType::BulkString(format!("{}", port)),
     ]);
 
-    info!("🙏 >>> ToMaster: {:?} <<<", msg);
+    info!("[Replica] To Master - {msg:?}");
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    info!("🙏 >>> FromMaster: {:?} <<<", response);
+    info!("[Replica] Response - {response:?}");
 
-    // Send REPLCONF capa psync2
     let msg = DataType::Array(vec![
         DataType::BulkString("REPLCONF".to_string()),
         DataType::BulkString("capa".to_string()),
         DataType::BulkString("psync2".to_string()),
     ]);
 
-    info!("🙏 >>> ToMaster: {:?} <<<", msg);
+    info!("[Replica] To Master - {msg:?}");
     stream.write_all(&msg.as_bytes())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    info!("🙏 >>> FromMaster: {:?} <<<", response);
+    info!("[Replica] Response - {response:?}");
 
-    // Sendc PSYNC <master_replid> <offset>
     let msg = DataType::Array(vec![
         DataType::BulkString("PSYNC".to_string()),
         DataType::BulkString("?".to_string()),
         DataType::BulkString("-1".to_string()),
     ]);
 
-    info!("🙏 >>> ToMaster: {:?} <<<", msg);
+    info!("[Replica] To Master - {msg:?}");
     stream.write_all(&msg.as_bytes())?;
     loop {
-        info!("🙏 >>> Starting Master Work <<<",);
+        info!("[Replica] Waiting for master response");
         let mut reader = std::io::BufReader::new(&stream);
         let cmd = Command::parse_with_reader(&mut reader)
-            .context(fdbg!("Replica command parse error"))?;
-        let Ok(msg) = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None, false)
-            .context(fdbg!("Replica command process error"))
-        else {
-            break;
+            .context(fdbg!("[Replica] command parse error"))?;
+        let msg = match cmd_processor::process_cmd(&cmd, &stream, &map, &args, None)
+            .context(fdbg!("[Replica] command process error"))
+        {
+            Ok(msg) => msg,
+            Err(e) => {
+                warn!("[Replica] Error processing command {:?}", e);
+                break;
+            }
         };
         if let Some(DataType::EmptyString) = msg {
+            warn!("[Replica] Received empty string from master");
             break;
         }
-        info!("Received from master {:?}", msg);
-        info!("🙏 >>> Finished Master Work <<<",);
+        info!("[Replica] Response - {msg:?}");
     }
-    info!("⭕️ >>> Connection with master closed <<<");
+    warn!("[Replica] Connection with master closed");
     Ok(())
 }

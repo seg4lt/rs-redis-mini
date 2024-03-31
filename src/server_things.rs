@@ -29,14 +29,11 @@ pub fn parse_tcp_stream(
         let mut reader = std::io::BufReader::new(&stream);
         let command = Command::parse_with_reader(&mut reader)?;
         let Some(msg) =
-            cmd_processor::process_cmd(&command, &stream, &map, &cmd_args, Some(&replicas), true)?
+            cmd_processor::process_cmd(&command, &stream, &map, &cmd_args, Some(&replicas))?
         else {
             break;
         };
-        info!(
-            "🙏 >>> Response: {:?} <<<",
-            std::str::from_utf8(&msg.as_bytes()).unwrap()
-        );
+        info!("[server] response - {msg:?}");
         stream
             .write_all(&msg.as_bytes())
             .context(fdbg!("Unable to write to TcpStream"))?;

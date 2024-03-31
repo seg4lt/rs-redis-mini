@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Context};
-use tracing::info;
+use anyhow::{bail, Context};
+use tracing::warn;
 
 use crate::{fdbg, LINE_ENDING, NEW_LINE};
 
@@ -42,7 +42,7 @@ impl DataType {
         let read_count = match reader.read(&mut buf) {
             Ok(read_count) => read_count,
             Err(_) => {
-                info!("⭕️ >>> Unable to read anything. Setting read count to 0");
+                warn!("Unable to read anything. Setting read count to 0");
                 0
             }
         };
@@ -50,7 +50,6 @@ impl DataType {
             // Unable to read anything, so noop is sent
             return Ok(DataType::EmptyString);
         }
-        // info!("⭕️ >>> Read: {:?}", buf[0] as char);
         match &buf[0] {
             b'*' => DataType::parse_array(reader).context(fdbg!("Unable to parse array")),
             b'$' => {
@@ -58,7 +57,7 @@ impl DataType {
             }
             b'+' => DataType::parse_simple_string(reader)
                 .context(fdbg!("Unable to parse simple string")),
-            _ => Err(anyhow!("Unknown DataType"))?,
+            _ => bail!("Unknown DataType"),
         }
     }
     fn parse_simple_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -67,7 +66,7 @@ impl DataType {
             .read_until(NEW_LINE, &mut buf)
             .context(fdbg!("Unable to read simple string"))?;
         if read_count == 0 {
-            return Err(anyhow!("Zero bytes read - unable to read simple string"));
+            bail!("Zero bytes read - unable to read simple string");
         }
         Ok(DataType::SimpleString(
             std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
@@ -95,7 +94,7 @@ impl DataType {
             .read(&mut content_buf)
             .context(fdbg!("Unable to read content of bulk string"))?;
         if read_count == length {
-            info!("⭕️ >>> LINE_ENDING not found, setting the type to NotBulkString");
+            warn!("LINE_ENDING not found, setting the type to NotBulkString");
             return Ok(DataType::NotBulkString(content_buf[..(length)].to_vec()));
         }
         match String::from_utf8(content_buf.clone())
@@ -114,7 +113,7 @@ impl DataType {
             .read_until(NEW_LINE, &mut buf) // TODO: What is \n was never sent?
             .context(fdbg!("Unable to read count"))?;
         if read_count == 0 {
-            return Err(anyhow!("Zero bytes read - unable to read count"));
+            bail!("Zero bytes read - unable to read count");
         }
         std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
             .context(fdbg!("Unable to convert count buffer to string"))?
