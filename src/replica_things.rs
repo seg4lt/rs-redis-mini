@@ -80,7 +80,6 @@ pub fn sync_with_master(
             warn!("[Replica] Received empty string from master");
             break;
         }
-        info!("[Replica] Response - {msg:?}");
     }
     warn!("[Replica] Connection with master closed");
     Ok(())

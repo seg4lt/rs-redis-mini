@@ -97,10 +97,12 @@ impl DataType {
             warn!("LINE_ENDING not found, setting the type to NotBulkString");
             return Ok(DataType::NotBulkString(content_buf[..(length)].to_vec()));
         }
-        match String::from_utf8(content_buf.clone())
-            .context(fdbg!("Unable to convert buffer to utf8"))
-        {
-            Ok(content) => Ok(DataType::BulkString(content[..length].to_string())),
+        match String::from_utf8(content_buf[..length].to_vec()).context(fdbg!(
+            "Unable to convert buffer to utf8 - Len({}) - Read({})",
+            length,
+            read_count
+        )) {
+            Ok(content) => Ok(DataType::BulkString(content.to_string())),
             Err(err) => {
                 bail!("Unable to read bulk string, {:?}", err)
             }
