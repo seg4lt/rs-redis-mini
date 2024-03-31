@@ -1,19 +1,32 @@
-use std::{io::Write, net::TcpStream};
+use std::{
+    collections::HashMap,
+    io::Write,
+    net::TcpStream,
+    sync::{Arc, RwLock},
+};
 
 use anyhow::Context;
 
-use crate::resp_parser::DataType;
+use crate::{
+    cli_args::CliArgs, cmd_processor, command::Command, fdbg, resp_parser::DataType, store::Store,
+};
 
-pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow::Result<()> {
+pub fn sync_with_master(
+    port: String,
+    ip: String,
+    master_port: String,
+    map: Arc<RwLock<Store>>,
+    args: Arc<HashMap<String, CliArgs>>,
+) -> anyhow::Result<()> {
     let server = format!("{}:{}", ip, master_port);
-    let mut stream = TcpStream::connect(server).context("Cannot connect to tcp stream")?;
+    let mut stream = TcpStream::connect(server).context(fdbg!("Cannot connect to tcp stream"))?;
 
     // Send PING to master
     let msg = DataType::Array(vec![DataType::BulkString("PING".into())]);
-    println!(
-        "🙏 >>> ToMaster: {:?} <<<",
-        std::str::from_utf8(&msg.as_bytes()).unwrap()
-    );
+    // println!(
+    //     "🙏 >>> ToMaster: {:?} <<<",
+    //     std::str::from_utf8(&msg.as_bytes()).unwrap()
+    // );
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
@@ -64,24 +77,17 @@ pub fn sync_with_master(port: String, ip: String, master_port: String) -> anyhow
     );
     stream.write_all(&msg.as_bytes())?;
     loop {
+        println!("🙏 >>> Starting Master Work   <<<",);
         let mut reader = std::io::BufReader::new(&stream);
-        match DataType::parse(&mut reader) {
-            Ok(DataType::NotBulkString(data)) => {
-                println!("🙏 >>> FromMaster: NotBulkString {:?} <<<", data.len())
-            }
-            Err(err) => {
-                println!("🙏 >>> ERROR: {:?} <<<", err);
-                break;
-            }
-            Ok(DataType::Noop) => {
-                println!("🙏 >>> FromMaster: Noop <<<");
-                break;
-            }
-            Ok(d_type) => {
-                println!("🙏 >>> FromMaster: Don't know what to do {:?}<<<", d_type);
-                continue;
-            }
-        }
+        let cmd = Command::parse_with_reader(&mut reader)
+            .context(fdbg!("Replica command parse error"))?;
+        let Ok(_msg) = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None)
+            .context(fdbg!("Replica command process error"))
+        else {
+            // TODO: Need to break out from this loop when server is down
+            break;
+        };
+        println!("🙏 >>> Finished Master Work   <<<",);
     }
     println!("⭕️ >>> Connection with master closed <<<");
     Ok(())

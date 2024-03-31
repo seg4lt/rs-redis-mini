@@ -9,7 +9,9 @@ use std::{
 
 use anyhow::{anyhow, Context};
 pub(crate) mod cli_args;
+pub(crate) mod cmd_processor;
 pub(crate) mod command;
+pub(crate) mod dev;
 pub(crate) mod hash;
 pub(crate) mod master_things;
 pub(crate) mod replica_things;
@@ -43,9 +45,11 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(CliArgs::ReplicaOf(ip, master_port)) => {
             let (port, ip, master_port) = (port.clone(), ip.clone(), master_port.clone());
+            let (map, args) = (shared_map.clone(), cmd_args.clone());
             std::thread::spawn(move || -> anyhow::Result<()> {
-                replica_things::sync_with_master(port, ip, master_port)
-                    .context("Unable to sync with master")?;
+                replica_things::sync_with_master(port, ip, master_port, map, args)
+                    .context(fdbg!("Unable to sync with master"))
+                    .expect("Error on replica connection to the master");
                 Ok(())
             });
         }
@@ -59,8 +63,8 @@ async fn main() -> anyhow::Result<()> {
         std::thread::spawn(move || {
             let stream = stream.unwrap();
             server_things::parse_tcp_stream(stream, map, args, replicas)
-                .context("Unable to parse tcp stream")
-                .unwrap();
+                .context(fdbg!("Unable to parse tcp stream"))
+                .expect("Server closed");
         });
     }
     Ok(())

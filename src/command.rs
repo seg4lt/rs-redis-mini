@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Context, Ok};
+use anyhow::{anyhow, bail, Context, Ok};
 
-use crate::resp_parser::DataType;
+use crate::{fdbg, resp_parser::DataType};
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -20,14 +20,24 @@ pub enum Command {
 impl Command {
     pub fn parse_with_reader<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<Command> {
         let data_type =
-            DataType::parse(reader).context("Unable to read DataType to process command")?;
+            DataType::parse(reader).context(fdbg!("Unable to read DataType to process command"))?;
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
-        println!(
-            "🙏 >>> Command Request: {:?} <<<",
-            std::str::from_utf8(&data_type.as_bytes())?
-        );
+        match &data_type {
+            DataType::BulkString(data) => {
+                println!("🙏 >>> Command Request: {:?} <<<", data.len())
+            }
+            _ => {
+                println!(
+                    "🙏 >>> Command Request: {:?} <<<",
+                    std::str::from_utf8(&data_type.as_bytes()).context(fdbg!(
+                        "Unable to parse command - Datatype = {:?}",
+                        data_type
+                    ))?
+                );
+            }
+        }
         match data_type {
             DataType::Array(items) => {
                 if items.len() == 0 {
@@ -35,9 +45,12 @@ impl Command {
                 }
                 Self::from(&items[0], &items[1..])
             }
-            DataType::NotBulkString(_) => Ok(Command::Noop),
-            DataType::Noop => Ok(Command::Noop),
-            _ => Err(anyhow!("Command must be of type Array")),
+            DataType::Noop | DataType::SimpleString(_) | DataType::NotBulkString(_) => {
+                Ok(Command::Noop)
+            }
+            what_is_this => Err(anyhow!(
+                "Command must be of type Array. Found {what_is_this:?}"
+            )),
         }
     }
     fn from(command: &DataType, args: &[DataType]) -> anyhow::Result<Command> {
@@ -152,9 +165,10 @@ impl Command {
                         let value = args
                             .get(i)
                             .ok_or_else(|| anyhow!("Flag must have a value"))?;
-                        let value = value.as_bytes();
-                        let value = String::from_utf8(value)?;
-                        extra_flags.insert(flag.to_lowercase(), value);
+                        let DataType::BulkString(value) = value else {
+                            bail!("Flag must be of type BulkString");
+                        };
+                        extra_flags.insert(flag.to_lowercase(), value.clone());
                     }
                     _ => Err(anyhow!("Unknown flag sent to SET command"))?,
                 },

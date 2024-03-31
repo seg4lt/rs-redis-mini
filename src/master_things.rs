@@ -28,12 +28,13 @@ pub fn do_follow_up_if_needed(
     if replicas.len() == 0 {
         return Ok(());
     }
-    let mut stream = replicas.get_mut(0).expect("Expected a replica");
-    match command {
-        Command::PSync(_, _) => send_rdb_to_replica(&mut stream)?,
-        Command::Set(key, value, flags) => broadcast_set_cmd(&mut stream, key, value, flags)?,
-        _ => {}
-    };
+    for mut stream in replicas.iter_mut() {
+        match command {
+            Command::PSync(_, _) => send_rdb_to_replica(&mut stream)?,
+            Command::Set(key, value, flags) => broadcast_set_cmd(&mut stream, key, value, flags)?,
+            _ => {}
+        };
+    }
     Ok(())
 }
 

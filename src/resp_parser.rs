@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context};
 
-use crate::{LINE_ENDING, NEW_LINE};
+use crate::{fdbg, LINE_ENDING, NEW_LINE};
 
 #[derive(Debug, PartialEq)]
 pub enum DataType {
@@ -50,9 +50,12 @@ impl DataType {
         }
         // println!("⭕️ >>> Read: {:?}", buf[0] as char);
         match &buf[0] {
-            b'*' => DataType::parse_array(reader).context("Unable to parse array"),
-            b'$' => DataType::parse_bulk_string(reader).context("Unable to parse bulk string"),
-            b'+' => DataType::parse_simple_string(reader).context("Unable to parse simple string"),
+            b'*' => DataType::parse_array(reader).context(fdbg!("Unable to parse array")),
+            b'$' => {
+                DataType::parse_bulk_string(reader).context(fdbg!("Unable to parse bulk string"))
+            }
+            b'+' => DataType::parse_simple_string(reader)
+                .context(fdbg!("Unable to parse simple string")),
             _ => Err(anyhow!("Unknown DataType"))?,
         }
     }
@@ -60,18 +63,19 @@ impl DataType {
         let mut buf = vec![];
         let read_count = reader
             .read_until(NEW_LINE, &mut buf)
-            .context("Unable to read simple string")?;
+            .context(fdbg!("Unable to read simple string"))?;
         if read_count == 0 {
             return Err(anyhow!("Zero bytes read - unable to read simple string"));
         }
         Ok(DataType::SimpleString(
             std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
-                .context("Unable to convert simple string buffer to string")?
+                .context(fdbg!("Unable to convert simple string buffer to string"))?
                 .to_string(),
         ))
     }
     fn parse_array<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
-        let length = Self::read_count(reader).context("Unable to determine length of an array")?;
+        let length =
+            Self::read_count(reader).context(fdbg!("Unable to determine length of an array"))?;
         let items = (0..length)
             .map(|i| {
                 DataType::parse(reader)
@@ -83,16 +87,18 @@ impl DataType {
     }
     fn parse_bulk_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let length =
-            DataType::read_count(reader).context("Unable to read length of bulk string")?;
+            DataType::read_count(reader).context(fdbg!("Unable to read length of bulk string"))?;
         let mut content_buf = vec![0; length + LINE_ENDING.len()];
         let read_count = reader
             .read(&mut content_buf)
-            .context("Unable to read content of bulk string")?;
+            .context(fdbg!("Unable to read content of bulk string"))?;
         if read_count == length {
             println!("⭕️ >>> LINE_ENDING not found, setting the type to NotBulkString");
             return Ok(DataType::NotBulkString(content_buf[..(length)].to_vec()));
         }
-        match String::from_utf8(content_buf.clone()).context("Unable to convert buffer to utf8") {
+        match String::from_utf8(content_buf.clone())
+            .context(fdbg!("Unable to convert buffer to utf8"))
+        {
             Ok(content) => Ok(DataType::BulkString(content[..length].to_string())),
             Err(err) => {
                 bail!("Unable to read bulk string, {:?}", err)
@@ -104,14 +110,14 @@ impl DataType {
         let mut buf = vec![];
         let read_count = reader
             .read_until(NEW_LINE, &mut buf) // TODO: What is \n was never sent?
-            .context("Unable to read count")?;
+            .context(fdbg!("Unable to read count"))?;
         if read_count == 0 {
             return Err(anyhow!("Zero bytes read - unable to read count"));
         }
         std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
-            .context("Unable to convert count buffer to string")?
+            .context(fdbg!("Unable to convert count buffer to string"))?
             .parse::<usize>()
-            .context("Unable to parse length from read count string")
+            .context(fdbg!("Unable to parse length from read count string"))
     }
 }
 
@@ -151,12 +157,12 @@ mod tests {
             },
             Test {
                 input:
-                    "*5\r\n$3\r\nset\r\n$4\r\nkey2\r\n$6\r\nvalus2\r\n$2\r\nex\r\n$4\r\n1000\r\n",
+                    "*5\r\n$3\r\nset\r\n$4\r\nkey2\r\n$6\r\nvalus2\r\n$2\r\npx\r\n$4\r\n1000\r\n",
                 expected: DataType::Array(vec![
                     DataType::BulkString("set".into()),
                     DataType::BulkString("key2".into()),
                     DataType::BulkString("valus2".into()),
-                    DataType::BulkString("ex".into()),
+                    DataType::BulkString("px".into()),
                     DataType::BulkString("1000".into()),
                 ]),
             },
