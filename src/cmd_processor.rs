@@ -42,8 +42,8 @@ pub fn process_cmd(
             }
             process_psync_cmd(&map)?
         }
-        Command::Noop => {
-            println!("🙏 >>> Noop command <<<");
+        Command::Noop(comment) => {
+            println!("🙏 >>> Noop command - {:?} <<<", comment);
             // Do nothing
             return Ok(None);
         }

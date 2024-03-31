@@ -14,7 +14,7 @@ pub enum Command {
     Info(Option<String>),
     ReplConf(String, String),
     PSync(String, String),
-    Noop,
+    Noop(String),
 }
 
 impl Command {
@@ -25,7 +25,7 @@ impl Command {
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
         match &data_type {
-            DataType::BulkString(data) => {
+            DataType::NotBulkString(data) => {
                 println!("🙏 >>> Command Request: {:?} <<<", data.len())
             }
             _ => {
@@ -45,9 +45,10 @@ impl Command {
                 }
                 Self::from(&items[0], &items[1..])
             }
-            DataType::Noop | DataType::SimpleString(_) | DataType::NotBulkString(_) => {
-                Ok(Command::Noop)
+            DataType::Noop | DataType::SimpleString(_) => {
+                Ok(Command::Noop("Noop|SimpleString DataType".into()))
             }
+            DataType::NotBulkString(_) => Ok(Command::Noop("NotBulkString DataType".into())),
             what_is_this => Err(anyhow!(
                 "Command must be of type Array. Found {what_is_this:?}"
             )),
