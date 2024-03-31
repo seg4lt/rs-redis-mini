@@ -93,6 +93,7 @@ impl DataType {
         let read_count = reader
             .read(&mut content_buf)
             .context(fdbg!("Unable to read content of bulk string"))?;
+        println!("Read count {:?}, length {:?}", read_count, length);
         if read_count == length {
             println!("⭕️ >>> LINE_ENDING not found, setting the type to NotBulkString");
             return Ok(DataType::NotBulkString(content_buf[..(length)].to_vec()));

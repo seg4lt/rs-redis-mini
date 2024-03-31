@@ -15,9 +15,11 @@ use base64::prelude::*;
 pub fn do_follow_up_if_needed(
     command: &Command,
     map: &Arc<RwLock<Store>>,
+    mut current_stream: &mut TcpStream,
     replicas: &Arc<Mutex<Vec<TcpStream>>>,
 ) -> anyhow::Result<()> {
     let value = map.write().unwrap().get(KEY_IS_MASTER.into());
+
     if value.is_none() {
         return Ok(());
     }
@@ -28,12 +30,14 @@ pub fn do_follow_up_if_needed(
     if replicas.len() == 0 {
         return Ok(());
     }
-    for mut stream in replicas.iter_mut() {
-        match command {
-            Command::PSync(_, _) => send_rdb_to_replica(&mut stream)?,
-            Command::Set(key, value, flags) => broadcast_set_cmd(&mut stream, key, value, flags)?,
-            _ => {}
-        };
+    match command {
+        Command::PSync(_, _) => send_rdb_to_replica(&mut current_stream)?,
+        Command::Set(key, value, flags) => {
+            for mut stream in replicas.iter_mut() {
+                broadcast_set_cmd(&mut stream, key, value, flags)?
+            }
+        }
+        _ => {}
     }
     Ok(())
 }

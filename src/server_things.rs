@@ -39,7 +39,7 @@ pub fn parse_tcp_stream(
         stream
             .write_all(&msg.as_bytes())
             .context(fdbg!("Unable to write to TcpStream"))?;
-        master_things::do_follow_up_if_needed(&command, &map, &replicas)?;
+        master_things::do_follow_up_if_needed(&command, &map, &mut stream, &replicas)?;
     }
     Ok(())
 }
