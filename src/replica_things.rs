@@ -26,7 +26,7 @@ pub fn sync_with_master(
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    println!("🙏 >>> FromMaster: {:?} <<<", response.as_bytes());
+    println!("🙏 >>> FromMaster: {:?} <<<", response);
 
     // Send REPLCONF listening-port <port>
     let msg = DataType::Array(vec![
@@ -35,14 +35,11 @@ pub fn sync_with_master(
         DataType::BulkString(format!("{}", port)),
     ]);
 
-    println!(
-        "🙏 >>> ToMaster: {:?} <<<",
-        std::str::from_utf8(&msg.as_bytes()).unwrap()
-    );
+    println!("🙏 >>> ToMaster: {:?} <<<", msg);
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    println!("🙏 >>> FromMaster: {:?} <<<", response.as_bytes());
+    println!("🙏 >>> FromMaster: {:?} <<<", response);
 
     // Send REPLCONF capa psync2
     let msg = DataType::Array(vec![
@@ -51,14 +48,11 @@ pub fn sync_with_master(
         DataType::BulkString("psync2".to_string()),
     ]);
 
-    println!(
-        "🙏 >>> ToMaster: {:?} <<<",
-        std::str::from_utf8(&msg.as_bytes()).unwrap()
-    );
+    println!("🙏 >>> ToMaster: {:?} <<<", msg);
     stream.write_all(&msg.as_bytes())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
-    println!("🙏 >>> FromMaster: {:?} <<<", response.as_bytes());
+    println!("🙏 >>> FromMaster: {:?} <<<", response);
 
     // Sendc PSYNC <master_replid> <offset>
     let msg = DataType::Array(vec![
@@ -67,17 +61,14 @@ pub fn sync_with_master(
         DataType::BulkString("-1".to_string()),
     ]);
 
-    println!(
-        "🙏 >>> ToMaster: {:?} <<<",
-        std::str::from_utf8(&msg.as_bytes()).unwrap()
-    );
+    println!("🙏 >>> ToMaster: {:?} <<<", msg);
     stream.write_all(&msg.as_bytes())?;
     loop {
-        println!("🙏 >>> Starting Master Work   <<<",);
+        println!("🙏 >>> Starting Master Work <<<",);
         let mut reader = std::io::BufReader::new(&stream);
         let cmd = Command::parse_with_reader(&mut reader)
             .context(fdbg!("Replica command parse error"))?;
-        let Ok(msg) = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None)
+        let Ok(msg) = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None, false)
             .context(fdbg!("Replica command process error"))
         else {
             break;

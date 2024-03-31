@@ -28,7 +28,7 @@ pub fn parse_tcp_stream(
         let mut reader = std::io::BufReader::new(&stream);
         let command = Command::parse_with_reader(&mut reader)?;
         let Some(msg) =
-            cmd_processor::process_cmd(&command, &stream, &map, &cmd_args, Some(&replicas))?
+            cmd_processor::process_cmd(&command, &stream, &map, &cmd_args, Some(&replicas), true)?
         else {
             break;
         };

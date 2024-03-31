@@ -22,7 +22,12 @@ pub fn process_cmd(
     map: &Arc<RwLock<Store>>,
     cmd_args: &Arc<HashMap<String, CliArgs>>,
     replicas: Option<&Arc<Mutex<Vec<TcpStream>>>>,
+    is_server_cmd: bool,
 ) -> anyhow::Result<Option<DataType>> {
+    println!(
+        "🔥 Processing command as a {}",
+        if is_server_cmd { "server" } else { "client" }
+    );
     let msg = match cmd {
         Command::Ping(_) => DataType::SimpleString("PONG".into()),
         Command::Echo(value) => DataType::SimpleString(value.clone()),
@@ -47,8 +52,7 @@ pub fn process_cmd(
             // Do nothing
             return Ok(None);
         }
-        #[allow(unreachable_patterns)]
-        _ => Err(anyhow!("Unknown command - can't do anything"))?,
+        Command::NoopEmptyString => return Ok(None),
     };
     Ok(Some(msg))
 }

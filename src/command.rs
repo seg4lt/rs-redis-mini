@@ -25,20 +25,7 @@ impl Command {
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
-        match &data_type {
-            DataType::NotBulkString(data) => {
-                println!("🙏 >>> Command Request: {:?} <<<", data.len())
-            }
-            _ => {
-                println!(
-                    "🙏 >>> Command Request: {:?} <<<",
-                    std::str::from_utf8(&data_type.as_bytes()).context(fdbg!(
-                        "Unable to parse command - Datatype = {:?}",
-                        data_type
-                    ))?
-                );
-            }
-        }
+        println!("🙏 >>> Command Request: {:?} <<<", data_type);
         match data_type {
             DataType::Array(items) => {
                 if items.len() == 0 {
