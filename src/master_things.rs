@@ -11,7 +11,7 @@ use crate::{
     store::{Store, KEY_IS_MASTER},
 };
 use base64::prelude::*;
-use tracing::info;
+use tracing::{info, span, Level};
 
 pub fn do_follow_up_if_needed(
     command: &Command,
@@ -30,6 +30,8 @@ pub fn do_follow_up_if_needed(
     if replicas.len() == 0 {
         return Ok(());
     }
+    let span = span!(Level::INFO, "[Master]");
+    let _guard = span.enter();
     match command {
         Command::PSync(_, _) => send_rdb_to_replica(&mut current_stream)?,
         Command::Set(key, value, flags) => {
