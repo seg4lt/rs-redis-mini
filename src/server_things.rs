@@ -3,9 +3,9 @@ use std::{
     collections::HashMap,
     io::Write,
     net::TcpStream,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     cli_args::CliArgs, cmd_processor, command::Command, fdbg, master_things, resp_parser::DataType,
@@ -14,7 +14,7 @@ use crate::{
 
 pub fn parse_tcp_stream(
     mut stream: TcpStream,
-    map: Arc<RwLock<Store>>,
+    map: Arc<Mutex<Store>>,
     cmd_args: Arc<HashMap<String, CliArgs>>,
     replicas: Arc<Mutex<Vec<TcpStream>>>,
 ) -> anyhow::Result<()> {
@@ -37,13 +37,26 @@ pub fn parse_tcp_stream(
             Some(&replicas),
         )? {
             None | Some(DataType::EmptyString) => break,
+            Some(DataType::NewLine(_)) => continue,
             Some(msg) => msg,
         };
-        info!("[server] response - {msg:?}");
+        info!("Response - {msg:?}");
         stream
             .write_all(&msg.as_bytes())
             .context(fdbg!("Unable to write to TcpStream"))?;
-        master_things::do_follow_up_if_needed(&command, &map, &mut stream, &replicas)?;
+        {
+            let (command, map, stream, replicas) = (
+                command.clone(),
+                map.clone(),
+                stream.try_clone()?,
+                replicas.clone(),
+            );
+            std::thread::spawn(move || {
+                master_things::do_follow_up_if_needed(command, map, stream, replicas)
+                    .expect("Follow up should have been successful");
+                debug!("Follow up finished");
+            });
+        }
     }
     Ok(())
 }

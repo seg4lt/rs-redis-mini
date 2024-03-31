@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Context, Ok};
-use tracing::info;
+use tracing::debug;
 
 use crate::{fdbg, resp_parser::DataType};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Command {
     Ping(Option<String>),
     Echo(String),
@@ -23,10 +23,14 @@ impl Command {
     pub fn parse_with_reader<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<Command> {
         let data_type =
             DataType::parse(reader).context(fdbg!("Unable to read DataType to process command"))?;
+        match data_type {
+            DataType::RDSFile(_) => debug!("Received RDS File"),
+            DataType::NewLine(ch) => debug!("Received NewLine {:?}", ch),
+            _ => debug!("Received {:?}", String::from_utf8(data_type.as_bytes())?),
+        }
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
-        info!("Parsing command - {data_type:?}{}", "");
         match data_type {
             DataType::EmptyString => Ok(Command::ConnectionClosed),
             DataType::Array(items) => {
@@ -35,9 +39,11 @@ impl Command {
                 }
                 Self::from(&items[0], &items[1..])
             }
-            DataType::SimpleString(_) => Ok(Command::Noop("SimpleString".into())),
+            DataType::SimpleString(_) | DataType::BulkString(_) | DataType::NullBulkString => {
+                Ok(Command::Noop(String::from_utf8(data_type.as_bytes())?))
+            }
+            DataType::NewLine(ch) => Ok(Command::Noop(format!("{}", ch))),
             DataType::RDSFile(_) => Ok(Command::Noop("RDSFile".into())),
-            foo => bail!("Don't know how to process this command. Found {foo:?}"),
         }
     }
     fn from(command: &DataType, args: &[DataType]) -> anyhow::Result<Command> {

@@ -12,6 +12,7 @@ pub enum DataType {
     // Noop,
     RDSFile(Vec<u8>),
     EmptyString,
+    NewLine(char),
 }
 
 impl DataType {
@@ -34,7 +35,7 @@ impl DataType {
                 }
                 result
             }
-            DataType::EmptyString => unimplemented!("EmptyString should not be bytes"),
+            DataType::EmptyString | DataType::NewLine(_) => vec![],
         }
     }
     pub fn parse<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -50,6 +51,7 @@ impl DataType {
             // Unable to read anything, so noop is sent
             return Ok(DataType::EmptyString);
         }
+        debug!("DataType identifier {:?}", buf[0].to_owned() as char);
         match &buf[0] {
             b'*' => DataType::parse_array(reader).context(fdbg!("Unable to parse array")),
             b'$' => {
@@ -57,7 +59,11 @@ impl DataType {
             }
             b'+' => DataType::parse_simple_string(reader)
                 .context(fdbg!("Unable to parse simple string")),
-            _ => unimplemented!("Converting this data type is not implemented yet!!!"),
+            b'\r' | b'\n' => Ok(DataType::NewLine(buf[0].to_owned() as char)),
+            foo => unimplemented!(
+                "Converting this data type is not implemented yet !!! - {:?}",
+                foo.to_owned() as char
+            ),
         }
     }
     fn parse_simple_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -71,11 +77,13 @@ impl DataType {
         let msg = std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
             .context(fdbg!("Unable to convert simple string buffer to string"))?
             .to_string();
+        debug!("Simple string content: {:?}", msg);
         Ok(DataType::SimpleString(msg))
     }
     fn parse_array<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let length =
             Self::read_count(reader).context(fdbg!("Unable to determine length of an array"))?;
+        debug!("Array length: {}", length);
         let items = (0..length)
             .map(|i| {
                 DataType::parse(reader)
@@ -92,13 +100,13 @@ impl DataType {
         let read_count = reader
             .read(&mut content_buf)
             .context(fdbg!("Unable to read content of bulk string"))?;
-        if read_count != length {
-            debug!("Last two digit {:?}", content_buf[length..].to_vec())
-        }
+
         let d_type = match read_count {
             0 => bail!("Zero bytes read - unable to read bulk string"),
-            _ if read_count == length => {
-                info!("Looks like RDS file, did not read CRLF");
+            _ if read_count == length || read_count >= 5 && &content_buf[0..5] == b"REDIS" => {
+                // NOTE doesn't work if we try to send REDIS itself as string
+                // This is to avoid creating new method that does RDS read
+                info!("Looks like RDS file, first 5 bytes are 'REDIS'");
                 DataType::RDSFile(content_buf[..(length)].to_vec())
             }
             _ => {
@@ -107,6 +115,7 @@ impl DataType {
                     length,
                     read_count
                 ))?;
+                debug!("Bulk string content: {:?}", content);
                 DataType::BulkString(content)
             }
         };

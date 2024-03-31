@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Write},
     net::TcpStream,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{bail, Context};
@@ -16,7 +16,7 @@ pub fn sync_with_master(
     port: String,
     ip: String,
     master_port: String,
-    map: Arc<RwLock<Store>>,
+    map: Arc<Mutex<Store>>,
     args: Arc<HashMap<String, CliArgs>>,
 ) -> anyhow::Result<()> {
     let span = span!(Level::DEBUG, "[Replica]");
@@ -34,14 +34,30 @@ pub fn sync_with_master(
         info!("Waiting for master response");
         let cmd = Command::parse_with_reader(&mut reader).context(fdbg!("command parse error"))?;
         let ret_dtype = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None);
-        if let Err(e) = ret_dtype {
-            warn!("Error processing command {:?}", e);
-            break;
-        }
-        if let Some(DataType::EmptyString) = ret_dtype.unwrap() {
-            warn!("Received empty string from master");
-            break;
-        }
+
+        debug!("Received command from master - {cmd:?}");
+        let ret_dtype = match ret_dtype {
+            Ok(Some(dtype)) => dtype,
+            Ok(None) => continue,
+            Err(e) => {
+                warn!("Error processing command {:?}", e);
+                break;
+            }
+        };
+        debug!("Response DataType - {ret_dtype:?}");
+        let ret_dtype = match ret_dtype {
+            DataType::Array(_) => ret_dtype,
+            DataType::EmptyString => {
+                warn!("Received empty string from master");
+                break;
+            }
+            _ => {
+                debug!("Received data type that is not returned to master - {ret_dtype:?}");
+                continue;
+            }
+        };
+        info!("Sending response to master - {ret_dtype:?}");
+        stream.write_all(&ret_dtype.as_bytes())?
     }
     warn!("Connection with master closed");
     Ok(())

@@ -5,7 +5,7 @@ use crate::{
 use std::{
     collections::HashMap,
     net::{TcpListener, TcpStream},
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{anyhow, Context};
@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     debug!("Logs from your program will appear here!");
 
     // TODO: To many mutex / locks - will app bottleneck because thread can't get a lock?
-    let shared_map: Arc<RwLock<Store>> = Arc::new(RwLock::new(Store::new()));
+    let shared_map: Arc<Mutex<Store>> = Arc::new(Mutex::new(Store::new()));
     let cmd_args = Arc::new(CliArgs::get()?);
     let replicas: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
     let port = get_port(&cmd_args);
@@ -64,12 +64,12 @@ fn get_port(cmd_args: &Arc<HashMap<String, CliArgs>>) -> String {
 fn setup_server(
     cmd_args: &Arc<HashMap<String, CliArgs>>,
     cur_server_port: &String,
-    map: &Arc<RwLock<Store>>,
+    map: &Arc<Mutex<Store>>,
 ) -> anyhow::Result<()> {
     match cmd_args.get("--replicaof") {
         None => {
             let hash = hash::generate_random_string();
-            let mut map = map.write().unwrap();
+            let mut map = map.lock().unwrap();
             map.set(KEY_IS_MASTER.into(), "true".into(), None);
             map.set(KEY_MASTER_REPLID.into(), hash, None);
             map.set(KEY_MASTER_REPL_OFFSET.into(), "0".into(), None);

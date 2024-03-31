@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     io::Write,
     net::TcpStream,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use crate::{
@@ -14,12 +14,14 @@ use base64::prelude::*;
 use tracing::{info, span, Level};
 
 pub fn do_follow_up_if_needed(
-    command: &Command,
-    map: &Arc<RwLock<Store>>,
-    mut current_stream: &mut TcpStream,
-    replicas: &Arc<Mutex<Vec<TcpStream>>>,
+    command: Command,
+    map: Arc<Mutex<Store>>,
+    mut current_stream: TcpStream,
+    replicas: Arc<Mutex<Vec<TcpStream>>>,
 ) -> anyhow::Result<()> {
-    let value = map.write().unwrap().get(KEY_IS_MASTER.into());
+    let span = span!(Level::DEBUG, "[Master]");
+    let _guard = span.enter();
+    let value = map.lock().unwrap().get(KEY_IS_MASTER.into());
     if value.is_none() {
         return Ok(());
     }
@@ -30,27 +32,22 @@ pub fn do_follow_up_if_needed(
     if replicas.len() == 0 {
         return Ok(());
     }
-    let span = span!(Level::INFO, "[Master]");
-    let _guard = span.enter();
     match command {
         Command::PSync(_, _) => send_rdb_to_replica(&mut current_stream)?,
         Command::Set(key, value, flags) => {
             for mut stream in replicas.iter_mut() {
-                broadcast_set_cmd(&mut stream, key, value, flags)?
+                broadcast_set_cmd(&mut stream, &key, &value, &flags)?
             }
         }
         _ => {}
-    }
+    };
     Ok(())
 }
 
 fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
     let base64 = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
     let decoded_base64 = BASE64_STANDARD.decode(base64).unwrap();
-    info!(
-        "[Master] Sending RDB to replica - Length({})",
-        decoded_base64.len()
-    );
+    info!("Sending RDB to replica - Length({})", decoded_base64.len());
     let d_type = DataType::RDSFile(decoded_base64);
     stream.write_all(&d_type.as_bytes())?;
     Ok(())
