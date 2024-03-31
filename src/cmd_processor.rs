@@ -43,12 +43,12 @@ pub fn process_cmd(
             }
             process_psync_cmd(&map)?
         }
+        Command::NoopEmptyString => DataType::EmptyString,
         Command::Noop(comment) => {
             info!("Received Noop command - {:?} <<<", comment);
             // Do nothing
             return Ok(None);
         }
-        Command::NoopEmptyString => return Ok(None),
     };
     Ok(Some(msg))
 }

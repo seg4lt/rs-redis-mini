@@ -26,7 +26,7 @@ impl Command {
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {
-        info!("Parsing command - {data_type:?}");
+        info!("Parsing command - {data_type:?}{}", "");
         match data_type {
             DataType::Array(items) => {
                 if items.len() == 0 {
@@ -34,11 +34,11 @@ impl Command {
                 }
                 Self::from(&items[0], &items[1..])
             }
+            DataType::EmptyString => Ok(Command::NoopEmptyString),
             DataType::Noop | DataType::SimpleString(_) => {
                 Ok(Command::Noop("DT_Noop|SimpleString".into()))
             }
             DataType::NotBulkString(_) => Ok(Command::Noop("DT_NotBulkString".into())),
-            DataType::EmptyString => Ok(Command::NoopEmptyString),
             foo => bail!("Don't know how to process this command. Found {foo:?}"),
         }
     }
