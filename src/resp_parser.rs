@@ -10,6 +10,7 @@ pub enum DataType {
     NotBulkString(Vec<u8>),
     Array(Vec<DataType>),
     Noop,
+    EmptyString,
 }
 
 impl DataType {
@@ -32,7 +33,7 @@ impl DataType {
                 }
                 result
             }
-            DataType::Noop => vec![],
+            DataType::Noop | DataType::EmptyString => vec![],
         }
     }
     pub fn parse<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -46,7 +47,7 @@ impl DataType {
         };
         if read_count == 0 {
             // Unable to read anything, so noop is sent
-            return Ok(DataType::Noop);
+            return Ok(DataType::EmptyString);
         }
         // println!("⭕️ >>> Read: {:?}", buf[0] as char);
         match &buf[0] {

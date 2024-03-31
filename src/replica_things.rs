@@ -23,10 +23,6 @@ pub fn sync_with_master(
 
     // Send PING to master
     let msg = DataType::Array(vec![DataType::BulkString("PING".into())]);
-    // println!(
-    //     "🙏 >>> ToMaster: {:?} <<<",
-    //     std::str::from_utf8(&msg.as_bytes()).unwrap()
-    // );
     stream.write_all(msg.as_bytes().as_ref())?;
     let mut reader = std::io::BufReader::new(&stream);
     let response = DataType::parse(&mut reader)?;
@@ -81,13 +77,16 @@ pub fn sync_with_master(
         let mut reader = std::io::BufReader::new(&stream);
         let cmd = Command::parse_with_reader(&mut reader)
             .context(fdbg!("Replica command parse error"))?;
-        let Ok(_msg) = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None)
+        let Ok(msg) = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None)
             .context(fdbg!("Replica command process error"))
         else {
-            // TODO: Need to break out from this loop when server is down
             break;
         };
-        println!("🙏 >>> Finished Master Work   <<<",);
+        if let Some(DataType::EmptyString) = msg {
+            break;
+        }
+        println!("Received from master {:?}", msg);
+        println!("🙏 >>> Finished Master Work <<<",);
     }
     println!("⭕️ >>> Connection with master closed <<<");
     Ok(())

@@ -15,6 +15,7 @@ pub enum Command {
     ReplConf(String, String),
     PSync(String, String),
     Noop(String),
+    NoopEmptyString,
 }
 
 impl Command {
@@ -45,6 +46,7 @@ impl Command {
                 }
                 Self::from(&items[0], &items[1..])
             }
+            DataType::EmptyString => Ok(Command::NoopEmptyString),
             DataType::Noop | DataType::SimpleString(_) => {
                 Ok(Command::Noop("Noop|SimpleString DataType".into()))
             }
