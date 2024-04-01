@@ -24,9 +24,9 @@ impl Command {
         let data_type =
             DataType::parse(reader).context(fdbg!("Unable to read DataType to process command"))?;
         match data_type {
-            DataType::RDSFile(_) => debug!("Received RDS File"),
-            DataType::NewLine(ch) => debug!("Received NewLine {:?}", ch),
-            _ => debug!("Received {:?}", String::from_utf8(data_type.as_bytes())?),
+            DataType::RDSFile(_) => debug!("🔥 Received RDS File"),
+            DataType::NewLine(ch) => debug!("🔥 Received NewLine {:?}", ch),
+            _ => debug!("🔥 Received {:?}", String::from_utf8(data_type.as_bytes())?),
         }
         Self::parse(data_type)
     }

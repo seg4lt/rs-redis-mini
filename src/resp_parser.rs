@@ -1,3 +1,5 @@
+use std::io::BufRead;
+
 use anyhow::{bail, Context};
 use tracing::{debug, info, warn};
 
@@ -38,7 +40,7 @@ impl DataType {
             DataType::EmptyString | DataType::NewLine(_) => vec![],
         }
     }
-    pub fn parse<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+    pub fn parse<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let mut buf = [0; 1];
         let read_count = match reader.read(&mut buf) {
             Ok(read_count) => read_count,
@@ -66,7 +68,7 @@ impl DataType {
             ),
         }
     }
-    fn parse_simple_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+    fn parse_simple_string<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let mut buf = vec![];
         let read_count = reader
             .read_until(NEW_LINE, &mut buf)
@@ -80,7 +82,7 @@ impl DataType {
         debug!("Simple string content: {:?}", msg);
         Ok(DataType::SimpleString(msg))
     }
-    fn parse_array<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+    fn parse_array<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let length =
             Self::read_count(reader).context(fdbg!("Unable to determine length of an array"))?;
         debug!("Array length: {}", length);
@@ -93,35 +95,42 @@ impl DataType {
             .collect::<Vec<DataType>>();
         Ok(DataType::Array(items))
     }
-    fn parse_bulk_string<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+    fn parse_bulk_string<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let length =
             DataType::read_count(reader).context(fdbg!("Unable to read length of bulk string"))?;
         let mut content_buf = vec![0; length + LINE_ENDING.len()];
-        let read_count = reader
-            .read(&mut content_buf)
+        reader
+            .read_exact(&mut content_buf)
             .context(fdbg!("Unable to read content of bulk string"))?;
 
-        let d_type = match read_count {
-            0 => bail!("Zero bytes read - unable to read bulk string"),
-            _ if read_count == length || read_count >= 5 && &content_buf[0..5] == b"REDIS" => {
-                // NOTE doesn't work if we try to send REDIS itself as string
-                // This is to avoid creating new method that does RDS read
-                info!("Looks like RDS file, first 5 bytes are 'REDIS'");
-                DataType::RDSFile(content_buf[..(length)].to_vec())
-            }
-            _ => {
-                let content = String::from_utf8(content_buf[..length].to_vec()).context(fdbg!(
-                    "Unable to convert buffer to utf8 - Len({}) - Read({})",
-                    length,
-                    read_count
-                ))?;
-                debug!("Bulk string content: {:?}", content);
-                DataType::BulkString(content)
-            }
-        };
-        Ok(d_type)
+        let content = String::from_utf8(content_buf[..length].to_vec())
+            .context(fdbg!("Unable to convert bulk string to string"))?;
+        debug!("Bulk string content: {:?}", content);
+        Ok(DataType::BulkString(content))
     }
-    fn read_count<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<usize> {
+    pub fn parse_rds_string<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+        let mut buf = [0; 1];
+        reader
+            .read_exact(&mut buf)
+            .context(fdbg!("Reading the datatype identifier for rds string"))?;
+        if buf[0] != b'$' {
+            bail!("Invalid RDS string identifier");
+        }
+        let length = DataType::read_count(reader)
+            .context(fdbg!("Unable to read length of RDSRDSRDS string"))?;
+        let mut content_buf = vec![0; length];
+
+        reader
+            .read_exact(&mut content_buf)
+            .context(fdbg!("Unable to read content of bulk string"))?;
+
+        info!(
+            "Looks like RDS file, first 5 bytes are {:?}",
+            std::str::from_utf8(&content_buf[..5])?
+        );
+        Ok(DataType::RDSFile(content_buf[..(length)].to_vec()))
+    }
+    fn read_count<R: BufRead>(reader: &mut R) -> anyhow::Result<usize> {
         let mut buf = vec![];
         let read_count = reader
             .read_until(NEW_LINE, &mut buf) // TODO: What is \n was never sent?

@@ -107,12 +107,18 @@ fn handshake<R: BufRead>(
 
     info!("To Master - {msg:?}");
     stream.write_all(&msg.as_bytes())?;
-    let response = DataType::parse(reader).context(fdbg!("Expected FULLRESYNC message"))?;
-    info!("Response - {response:?}");
+
+    if let DataType::SimpleString(content) =
+        DataType::parse(reader).context(fdbg!("Expected FULLRESYNC message"))?
+    {
+        info!("FULLRESYNC message - {content}");
+    } else {
+        bail!("Expected FULLRESYNC message");
+    }
 
     // RDS file
-    // let response = DataType::parse(reader).context(fdbg!("Unable to read RDS content"))?;
-    let response = DataType::parse(reader).context(fdbg!("Unable to read RDS content"))?;
+    let response =
+        DataType::parse_rds_string(reader).context(fdbg!("Unable to read RDS content"))?;
     match response {
         DataType::RDSFile(_) => Ok(()),
         d_type => bail!("Did not receive a valid RDS from master - {:?}", d_type),
