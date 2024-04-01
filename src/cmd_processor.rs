@@ -43,12 +43,16 @@ pub fn process_cmd(
             }
             ret_cmd
         }
-        Command::Wait(_, _) => {
+        Command::Wait(num_of_replicas, timeout_ms) => {
             let num_replicas = match replicas {
                 None => 0,
                 Some(r) => r.len(),
             };
-            DataType::Integer(num_replicas as u64)
+            if *num_of_replicas == 0 {
+                DataType::Integer(num_replicas as u64)
+            } else {
+                DataType::Integer(num_replicas as u64)
+            }
         }
         Command::ConnectionClosed => DataType::EmptyString,
         Command::Noop(_comment) => {

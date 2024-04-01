@@ -4,11 +4,14 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use tracing::debug;
+
 pub const KEY_MASTER_REPLID: &str = "__$$__master_replid";
 pub const KEY_MASTER_REPL_OFFSET: &str = "__$$__master_repl_offset";
 pub const KEY_IS_MASTER: &str = "__$$__is_master";
 pub const KEY_REPLICA_PORT: &str = "__$$__replica_port";
 pub const KEY_REPLCONF_ACK_OFFSET: &str = "__$$__replconf_ack_offset";
+pub const KEY_IS_WAIT_RUNNING: &str = "__$$__is_wait_running";
 
 pub struct Store {
     map: Mutex<HashMap<String, StoreValue>>,
@@ -20,8 +23,8 @@ impl Store {
             map: Mutex::new(HashMap::new()),
         }
     }
-    pub fn set(&self, key: String, value: String, expiry_time: Option<Duration>) {
-        let expiry_time = expiry_time.map(|time| {
+    pub fn set(&self, key: String, value: String, expiry_duration: Option<Duration>) {
+        let expiry_time = expiry_duration.map(|time| {
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
@@ -38,6 +41,7 @@ impl Store {
             let now = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap();
+            debug!("NowGET: {:?}", now.as_millis());
             if exp_time < now {
                 map.remove(&key);
                 return None;

@@ -64,7 +64,7 @@ impl DataType {
             // Unable to read anything, so noop is sent
             return Ok(DataType::EmptyString);
         }
-        debug!("DataType identifier {:?}", buf[0].to_owned() as char);
+        // debug!("DataType identifier {:?}", buf[0].to_owned() as char);
         match &buf[0] {
             b'*' => DataType::parse_array(reader).context(fdbg!("Unable to parse array")),
             b'$' => {
@@ -116,7 +116,7 @@ impl DataType {
 
         let content = String::from_utf8(content_buf[..length].to_vec())
             .context(fdbg!("Unable to convert bulk string to string"))?;
-        debug!("Bulk string content: {:?}", content);
+        // debug!("Bulk string content: {:?}", content);
         Ok(DataType::BulkString(content))
     }
     pub fn parse_rds_string<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {

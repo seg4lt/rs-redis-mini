@@ -14,7 +14,7 @@ pub enum Command {
     Info(Option<String>),
     ReplConf(String, String),
     PSync(String, String),
-    Wait(usize, usize),
+    Wait(usize, u64),
     Noop(String),
     ConnectionClosed,
 }
@@ -68,7 +68,7 @@ impl Command {
             _ => bail!("NumSlaves must be of type Integer"),
         };
         let timeout = match args.get(1) {
-            Some(DataType::BulkString(timeout)) => timeout.parse::<usize>()?,
+            Some(DataType::BulkString(timeout)) => timeout.parse::<u64>()?,
             _ => bail!("Timeout must be of type Integer"),
         };
         Ok(Command::Wait(num_slaves, timeout))

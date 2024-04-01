@@ -1,9 +1,9 @@
 use crate::{
     cli_args::CliArgs,
-    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET},
+    store::{Store, KEY_IS_MASTER, KEY_IS_WAIT_RUNNING, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET},
     types::Replicas,
 };
-use std::{collections::HashMap, net::TcpListener, sync::Arc};
+use std::{collections::HashMap, net::TcpListener, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context};
 use tracing::{debug, info, Level};
@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     debug!("Logs from your program will appear here!");
 
     // TODO: To many mutex / locks - will app bottleneck because thread can't get a lock?
-    let map: Arc<Store> = Arc::new(Store::new());
+    let map = Arc::new(Store::new());
     let cmd_args = Arc::new(CliArgs::get()?);
     let replicas = Arc::new(Replicas::new());
     let port = get_port(&cmd_args);
@@ -38,6 +38,19 @@ async fn main() -> anyhow::Result<()> {
     info!("Server started on 127.0.0.1:{}", port);
 
     for stream in listener.incoming() {
+        {
+            // Crude wait approach to block server if wait command is running
+            let mut is_wait_running = map
+                .get(KEY_IS_WAIT_RUNNING.into())
+                .unwrap_or("false".into());
+            while is_wait_running == "true" {
+                debug!("Blocking client as wait command is running");
+                is_wait_running = map
+                    .get(KEY_IS_WAIT_RUNNING.into())
+                    .unwrap_or("false".into());
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
         let (map, args, replicas) = (map.clone(), cmd_args.clone(), replicas.clone());
         // TODO: Implement event loop like redis??
         std::thread::spawn(move || {
