@@ -11,7 +11,6 @@ pub enum DataType {
     BulkString(String),
     NullBulkString,
     Array(Vec<DataType>),
-    // Noop,
     RDSFile(Vec<u8>),
     EmptyString,
     NewLine(char),
@@ -41,6 +40,16 @@ impl DataType {
         }
     }
     pub fn parse<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+        let data_type = Self::parse_inner(reader)
+            .context(fdbg!("Unable to read DataType to process command"))?;
+        match data_type {
+            DataType::RDSFile(_) => debug!("🔥 Received RDS File"),
+            DataType::NewLine(ch) => debug!("🔥 Received NewLine {:?}", ch),
+            _ => debug!("🔥 Received {:?}", String::from_utf8(data_type.as_bytes())?),
+        }
+        Ok(data_type)
+    }
+    fn parse_inner<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let mut buf = [0; 1];
         let read_count = match reader.read(&mut buf) {
             Ok(read_count) => read_count,

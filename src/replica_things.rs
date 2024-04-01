@@ -9,7 +9,12 @@ use anyhow::{bail, Context};
 use tracing::{debug, info, span, warn, Level};
 
 use crate::{
-    cli_args::CliArgs, cmd_processor, command::Command, fdbg, resp_parser::DataType, store::Store,
+    cli_args::CliArgs,
+    cmd_processor,
+    command::Command,
+    fdbg,
+    resp_parser::DataType,
+    store::{Store, KEY_REPLCONF_ACK_OFFSET},
 };
 
 pub fn sync_with_master(
@@ -32,10 +37,19 @@ pub fn sync_with_master(
 
     loop {
         info!("Waiting for master response");
-        let cmd = Command::parse_with_reader(&mut reader).context(fdbg!("command parse error"))?;
+        let request_dtype = DataType::parse(&mut reader)?;
+        let request_dtype_len = request_dtype.as_bytes().len();
+        let cmd = Command::parse(request_dtype).context(fdbg!("command parse error"))?;
         let ret_dtype = cmd_processor::process_cmd(&cmd, &stream, &map, &args, None);
-
         debug!("Received command from master - {cmd:?}");
+        if let Ok(_) = ret_dtype {
+            let offset = map
+                .get(KEY_REPLCONF_ACK_OFFSET.into())
+                .map(|v| v.parse::<usize>().unwrap())
+                .unwrap_or(0);
+            let offset = offset + request_dtype_len;
+            map.set(KEY_REPLCONF_ACK_OFFSET.into(), format!("{}", offset), None);
+        }
         let ret_dtype = match ret_dtype {
             Ok(Some(dtype)) => dtype,
             Ok(None) => continue,

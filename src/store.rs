@@ -8,6 +8,7 @@ pub const KEY_MASTER_REPLID: &str = "__$$__master_replid";
 pub const KEY_MASTER_REPL_OFFSET: &str = "__$$__master_repl_offset";
 pub const KEY_IS_MASTER: &str = "__$$__is_master";
 pub const KEY_REPLICA_PORT: &str = "__$$__replica_port";
+pub const KEY_REPLCONF_ACK_OFFSET: &str = "__$$__replconf_ack_offset";
 
 pub struct Store {
     map: Mutex<HashMap<String, StoreValue>>,

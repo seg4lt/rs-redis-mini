@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Context, Ok};
-use tracing::debug;
 
 use crate::{fdbg, resp_parser::DataType};
 
@@ -23,11 +22,6 @@ impl Command {
     pub fn parse_with_reader<R: std::io::BufRead>(reader: &mut R) -> anyhow::Result<Command> {
         let data_type =
             DataType::parse(reader).context(fdbg!("Unable to read DataType to process command"))?;
-        match data_type {
-            DataType::RDSFile(_) => debug!("🔥 Received RDS File"),
-            DataType::NewLine(ch) => debug!("🔥 Received NewLine {:?}", ch),
-            _ => debug!("🔥 Received {:?}", String::from_utf8(data_type.as_bytes())?),
-        }
         Self::parse(data_type)
     }
     pub fn parse(data_type: DataType) -> anyhow::Result<Command> {

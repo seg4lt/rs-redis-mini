@@ -8,7 +8,10 @@ use crate::{
     command::Command,
     fdbg,
     resp_parser::DataType,
-    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET, KEY_REPLICA_PORT},
+    store::{
+        Store, KEY_IS_MASTER, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET, KEY_REPLCONF_ACK_OFFSET,
+        KEY_REPLICA_PORT,
+    },
     types::Replicas,
     LINE_ENDING,
 };
@@ -52,11 +55,17 @@ pub fn process_cmd(
 
 fn process_replconf_cmd(option: &String, value: &String, map: &Arc<Store>) -> DataType {
     match option.to_lowercase().as_str() {
-        "getack" => DataType::Array(vec![
-            DataType::BulkString("REPLCONF".into()),
-            DataType::BulkString("ACK".into()),
-            DataType::BulkString("0".into()),
-        ]),
+        "getack" => {
+            let offset = map
+                .get(KEY_REPLCONF_ACK_OFFSET.into())
+                .map(|v| v.parse::<usize>().unwrap())
+                .unwrap_or(0);
+            DataType::Array(vec![
+                DataType::BulkString("REPLCONF".into()),
+                DataType::BulkString("ACK".into()),
+                DataType::BulkString(format!("{}", offset)),
+            ])
+        }
         "listening-port" => {
             map.set(KEY_REPLICA_PORT.into(), value.clone(), None);
             DataType::SimpleString("OK".into())
