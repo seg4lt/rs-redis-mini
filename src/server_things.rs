@@ -1,22 +1,17 @@
 use anyhow::Context;
-use std::{
-    collections::HashMap,
-    io::Write,
-    net::TcpStream,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, io::Write, net::TcpStream, sync::Arc};
 use tracing::{debug, info};
 
 use crate::{
     cli_args::CliArgs, cmd_processor, command::Command, fdbg, master_things, resp_parser::DataType,
-    store::Store,
+    store::Store, types::Replicas,
 };
 
 pub fn parse_tcp_stream(
     mut stream: TcpStream,
     map: Arc<Store>,
     cmd_args: Arc<HashMap<String, CliArgs>>,
-    replicas: Arc<Mutex<Vec<TcpStream>>>,
+    replicas: Arc<Replicas>,
 ) -> anyhow::Result<()> {
     loop {
         {

@@ -1,14 +1,11 @@
-use std::{
-    collections::HashMap,
-    io::Write,
-    net::TcpStream,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, io::Write, net::TcpStream, sync::Arc};
 
 use crate::{
     command::Command,
+    fdbg,
     resp_parser::DataType,
     store::{Store, KEY_IS_MASTER},
+    types::Replicas,
 };
 use base64::prelude::*;
 use tracing::{info, span, Level};
@@ -17,7 +14,7 @@ pub fn do_follow_up_if_needed(
     command: Command,
     map: Arc<Store>,
     mut current_stream: TcpStream,
-    replicas: Arc<Mutex<Vec<TcpStream>>>,
+    replicas: Arc<Replicas>,
 ) -> anyhow::Result<()> {
     let span = span!(Level::DEBUG, "[Master]");
     let _guard = span.enter();
@@ -28,15 +25,16 @@ pub fn do_follow_up_if_needed(
     if value.is_some() && value.unwrap() != "true" {
         return Ok(());
     }
-    let mut replicas = replicas.lock().unwrap();
-    if replicas.len() == 0 {
+    let num_of_replicas = replicas.len();
+    if num_of_replicas == 0 {
         return Ok(());
     }
     match command {
         Command::PSync(_, _) => send_rdb_to_replica(&mut current_stream)?,
         Command::Set(key, value, flags) => {
-            for mut stream in replicas.iter_mut() {
-                broadcast_set_cmd(&mut stream, &key, &value, &flags)?
+            for i in 0..num_of_replicas {
+                let mut stream = replicas.get(i).expect(&fdbg!("Replica not found"));
+                broadcast_set_cmd(&mut stream, &key, &value, &flags)?;
             }
         }
         _ => {}

@@ -1,12 +1,9 @@
 use crate::{
     cli_args::CliArgs,
     store::{Store, KEY_IS_MASTER, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET},
+    types::Replicas,
 };
-use std::{
-    collections::HashMap,
-    net::{TcpListener, TcpStream},
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, net::TcpListener, sync::Arc};
 
 use anyhow::{anyhow, Context};
 use tracing::{debug, info, Level};
@@ -20,6 +17,7 @@ pub(crate) mod replica_things;
 pub(crate) mod resp_parser;
 pub(crate) mod server_things;
 pub(crate) mod store;
+pub(crate) mod types;
 
 pub const LINE_ENDING: &str = "\r\n";
 pub const NEW_LINE: u8 = b'\n';
@@ -32,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     // TODO: To many mutex / locks - will app bottleneck because thread can't get a lock?
     let map: Arc<Store> = Arc::new(Store::new());
     let cmd_args = Arc::new(CliArgs::get()?);
-    let replicas: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
+    let replicas = Arc::new(Replicas::new());
     let port = get_port(&cmd_args);
     setup_server(&cmd_args, &port, map.clone())?;
 

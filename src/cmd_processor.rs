@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    net::TcpStream,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, net::TcpStream, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context};
 use tracing::debug;
@@ -14,6 +9,7 @@ use crate::{
     fdbg,
     resp_parser::DataType,
     store::{Store, KEY_IS_MASTER, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET, KEY_REPLICA_PORT},
+    types::Replicas,
     LINE_ENDING,
 };
 
@@ -22,7 +18,7 @@ pub fn process_cmd(
     stream: &TcpStream,
     map: &Arc<Store>,
     cmd_args: &Arc<HashMap<String, CliArgs>>,
-    replicas: Option<&Arc<Mutex<Vec<TcpStream>>>>,
+    replicas: Option<&Arc<Replicas>>,
 ) -> anyhow::Result<Option<DataType>> {
     let ret_data_type = match cmd {
         Command::Ping(_) => DataType::SimpleString("PONG".into()),
@@ -36,10 +32,10 @@ pub fn process_cmd(
             // Add replica to lis when PSYNC is called
             if let Some(replicas) = replicas {
                 // TODO: Remove replicas when they go down
-                replicas.lock().unwrap().push(
+                replicas.add(
                     stream
                         .try_clone()
-                        .context(fdbg!("Failed to clone the stream"))?,
+                        .context(fdbg!("Unable to clone tcp stream to add to cache"))?,
                 );
             }
             ret_cmd
