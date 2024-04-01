@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
     cli_args::CliArgs,
@@ -20,7 +20,7 @@ use crate::{
 pub fn process_cmd(
     cmd: &Command,
     stream: &TcpStream,
-    map: &Arc<Mutex<Store>>,
+    map: &Arc<Store>,
     cmd_args: &Arc<HashMap<String, CliArgs>>,
     replicas: Option<&Arc<Mutex<Vec<TcpStream>>>>,
 ) -> anyhow::Result<Option<DataType>> {
@@ -54,7 +54,7 @@ pub fn process_cmd(
     Ok(Some(ret_data_type))
 }
 
-fn process_replconf_cmd(option: &String, value: &String, map: &Arc<Mutex<Store>>) -> DataType {
+fn process_replconf_cmd(option: &String, value: &String, map: &Arc<Store>) -> DataType {
     match option.to_lowercase().as_str() {
         "getack" => DataType::Array(vec![
             DataType::BulkString("REPLCONF".into()),
@@ -62,7 +62,6 @@ fn process_replconf_cmd(option: &String, value: &String, map: &Arc<Mutex<Store>>
             DataType::BulkString("0".into()),
         ]),
         "listening-port" => {
-            let mut map = map.lock().unwrap();
             map.set(KEY_REPLICA_PORT.into(), value.clone(), None);
             DataType::SimpleString("OK".into())
         }
@@ -70,8 +69,7 @@ fn process_replconf_cmd(option: &String, value: &String, map: &Arc<Mutex<Store>>
     }
 }
 
-fn process_psync_cmd(map: &Arc<Mutex<Store>>) -> anyhow::Result<DataType> {
-    let mut map = map.lock().unwrap();
+fn process_psync_cmd(map: &Arc<Store>) -> anyhow::Result<DataType> {
     map.get(KEY_IS_MASTER.into())
         .ok_or_else(|| anyhow!("Not a master"))?;
     let master_replid = map
@@ -84,14 +82,13 @@ fn process_psync_cmd(map: &Arc<Mutex<Store>>) -> anyhow::Result<DataType> {
     )))
 }
 
-fn process_info_cmd(map: &Arc<Mutex<Store>>, cmd_args: &Arc<HashMap<String, CliArgs>>) -> DataType {
+fn process_info_cmd(map: &Arc<Store>, cmd_args: &Arc<HashMap<String, CliArgs>>) -> DataType {
     let is_replica = cmd_args.get("--replicaof").is_some();
     let mut msg = vec![
         format!("# Replication"),
         format!("role:{}", if is_replica { "slave" } else { "master" }),
     ];
     if !is_replica {
-        let mut map = map.lock().unwrap();
         let master_replid = map.get(KEY_MASTER_REPLID.into()).unwrap();
         let master_repl_offset = map.get(KEY_MASTER_REPL_OFFSET.into()).unwrap_or("0".into());
         msg.push(format!("master_replid:{}", master_replid));
@@ -100,8 +97,7 @@ fn process_info_cmd(map: &Arc<Mutex<Store>>, cmd_args: &Arc<HashMap<String, CliA
     DataType::BulkString(format!("{}{LINE_ENDING}", msg.join(LINE_ENDING)))
 }
 
-fn process_get_cmd(map: &Arc<Mutex<Store>>, key: &String) -> anyhow::Result<DataType> {
-    let mut map = map.lock().unwrap();
+fn process_get_cmd(map: &Arc<Store>, key: &String) -> anyhow::Result<DataType> {
     let msg = match map.get(key.clone()) {
         Some(value) => DataType::BulkString(value.to_string()),
         None => DataType::NullBulkString,
@@ -110,12 +106,11 @@ fn process_get_cmd(map: &Arc<Mutex<Store>>, key: &String) -> anyhow::Result<Data
 }
 
 fn process_set_cmd(
-    map: &Arc<Mutex<Store>>,
+    map: &Arc<Store>,
     key: &String,
     value: &String,
     flags: &Option<HashMap<String, String>>,
 ) -> anyhow::Result<DataType> {
-    let mut map = map.lock().unwrap();
     let old_value = map.get(key.clone());
     let mut exp_time = None;
     let mut do_get = false;

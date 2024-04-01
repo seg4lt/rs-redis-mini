@@ -15,13 +15,13 @@ use tracing::{info, span, Level};
 
 pub fn do_follow_up_if_needed(
     command: Command,
-    map: Arc<Mutex<Store>>,
+    map: Arc<Store>,
     mut current_stream: TcpStream,
     replicas: Arc<Mutex<Vec<TcpStream>>>,
 ) -> anyhow::Result<()> {
     let span = span!(Level::DEBUG, "[Master]");
     let _guard = span.enter();
-    let value = map.lock().unwrap().get(KEY_IS_MASTER.into());
+    let value = map.get(KEY_IS_MASTER.into());
     if value.is_none() {
         return Ok(());
     }

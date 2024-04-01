@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Write},
     net::TcpStream,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use anyhow::{bail, Context};
@@ -16,7 +16,7 @@ pub fn sync_with_master(
     port: String,
     ip: String,
     master_port: String,
-    map: Arc<Mutex<Store>>,
+    map: Arc<Store>,
     args: Arc<HashMap<String, CliArgs>>,
 ) -> anyhow::Result<()> {
     let span = span!(Level::DEBUG, "[Replica]");

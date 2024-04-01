@@ -14,7 +14,7 @@ use crate::{
 
 pub fn parse_tcp_stream(
     mut stream: TcpStream,
-    map: Arc<Mutex<Store>>,
+    map: Arc<Store>,
     cmd_args: Arc<HashMap<String, CliArgs>>,
     replicas: Arc<Mutex<Vec<TcpStream>>>,
 ) -> anyhow::Result<()> {
