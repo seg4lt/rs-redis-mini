@@ -43,7 +43,13 @@ pub fn process_cmd(
             }
             ret_cmd
         }
-        Command::Wait(_, _) => DataType::Integer(0),
+        Command::Wait(_, _) => {
+            let num_replicas = match replicas {
+                None => 0,
+                Some(r) => r.len(),
+            };
+            DataType::Integer(num_replicas as u64)
+        }
         Command::ConnectionClosed => DataType::EmptyString,
         Command::Noop(_comment) => {
             // info!("Received Noop command - {:?} <<<", comment);
