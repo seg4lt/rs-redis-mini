@@ -43,6 +43,7 @@ pub fn process_cmd(
             }
             ret_cmd
         }
+        Command::Wait(_, _) => DataType::Integer(0),
         Command::ConnectionClosed => DataType::EmptyString,
         Command::Noop(_comment) => {
             // info!("Received Noop command - {:?} <<<", comment);

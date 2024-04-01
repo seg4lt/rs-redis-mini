@@ -14,6 +14,7 @@ pub enum Command {
     Info(Option<String>),
     ReplConf(String, String),
     PSync(String, String),
+    Wait(usize, usize),
     Noop(String),
     ConnectionClosed,
 }
@@ -33,9 +34,10 @@ impl Command {
                 }
                 Self::from(&items[0], &items[1..])
             }
-            DataType::SimpleString(_) | DataType::BulkString(_) | DataType::NullBulkString => {
-                Ok(Command::Noop(String::from_utf8(data_type.as_bytes())?))
-            }
+            DataType::SimpleString(_)
+            | DataType::BulkString(_)
+            | DataType::NullBulkString
+            | DataType::Integer(_) => Ok(Command::Noop(String::from_utf8(data_type.as_bytes())?)),
             DataType::NewLine(ch) => Ok(Command::Noop(format!("{}", ch))),
             DataType::RDSFile(_) => Ok(Command::Noop("RDSFile".into())),
         }
@@ -53,8 +55,23 @@ impl Command {
             "info" => Self::parse_info_cmd(args),
             "replconf" => Self::parse_replconf_cmd(args),
             "psync" => Self::parse_psync_cmd(args),
+            "wait" => Self::parse_wait_cmd(args),
             foo => bail!("Unknown command - {foo}"),
         }
+    }
+    fn parse_wait_cmd(args: &[DataType]) -> anyhow::Result<Command> {
+        if args.len() < 2 {
+            bail!("Wait command must have at least two arguments");
+        }
+        let num_slaves = match args.get(0) {
+            Some(DataType::BulkString(num)) => num.parse::<usize>()?,
+            _ => bail!("NumSlaves must be of type Integer"),
+        };
+        let timeout = match args.get(1) {
+            Some(DataType::BulkString(timeout)) => timeout.parse::<usize>()?,
+            _ => bail!("Timeout must be of type Integer"),
+        };
+        Ok(Command::Wait(num_slaves, timeout))
     }
     fn parse_psync_cmd(args: &[DataType]) -> anyhow::Result<Command> {
         if args.len() < 2 {

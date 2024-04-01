@@ -12,6 +12,7 @@ pub enum DataType {
     NullBulkString,
     Array(Vec<DataType>),
     RDSFile(Vec<u8>),
+    Integer(u64),
     EmptyString,
     NewLine(char),
 }
@@ -36,6 +37,7 @@ impl DataType {
                 }
                 result
             }
+            DataType::Integer(i) => format!(":{}{LINE_ENDING}", i).into_bytes(),
             DataType::EmptyString | DataType::NewLine(_) => vec![],
         }
     }
