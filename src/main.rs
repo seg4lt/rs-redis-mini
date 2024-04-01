@@ -38,7 +38,8 @@ async fn main() -> anyhow::Result<()> {
     info!("Server started on 127.0.0.1:{}", port);
 
     for stream in listener.incoming() {
-        {
+        #[allow(unused_labels)]
+        'block_on_wait: {
             // Crude wait approach to block server if wait command is running
             let mut is_wait_running = map
                 .get(KEY_IS_WAIT_RUNNING.into())

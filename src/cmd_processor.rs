@@ -44,15 +44,7 @@ pub fn process_cmd(
             ret_cmd
         }
         Command::Wait(num_of_replicas, timeout_ms) => {
-            let num_replicas = match replicas {
-                None => 0,
-                Some(r) => r.len(),
-            };
-            if *num_of_replicas == 0 {
-                DataType::Integer(num_replicas as u64)
-            } else {
-                DataType::Integer(num_replicas as u64)
-            }
+            process_wait_cmd(*num_of_replicas, *timeout_ms, replicas)?
         }
         Command::ConnectionClosed => DataType::EmptyString,
         Command::Noop(_comment) => {
@@ -62,6 +54,21 @@ pub fn process_cmd(
         }
     };
     Ok(Some(ret_data_type))
+}
+
+fn process_wait_cmd(
+    num_of_replicas: usize,
+    timeout_ms: u64,
+    existing_replicas: Option<&Arc<Replicas>>,
+) -> anyhow::Result<DataType> {
+    let num_replicas = match existing_replicas {
+        None => 0,
+        Some(r) => r.len(),
+    };
+    if num_of_replicas == 0 {
+        return Ok(DataType::Integer(num_of_replicas as u64));
+    }
+    return Ok(DataType::Integer(num_replicas as u64));
 }
 
 fn process_replconf_cmd(option: &String, value: &String, map: &Arc<Store>) -> DataType {
