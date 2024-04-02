@@ -41,7 +41,6 @@ impl Store {
             let now = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap();
-            debug!("NowGET: {:?}", now.as_millis());
             if exp_time < now {
                 map.remove(&key);
                 return None;

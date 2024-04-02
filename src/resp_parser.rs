@@ -51,6 +51,69 @@ impl DataType {
         }
         Ok(data_type)
     }
+    pub fn parse_replconf_ack_offset<R: BufRead>(
+        reader: &mut R,
+    ) -> anyhow::Result<(String, String, usize)> {
+        let data_type = Self::parse_inner(reader)
+            .context(fdbg!("Unable to read DataType to process command"))?;
+        let DataType::Array(items) = data_type else {
+            bail!("Expected Array, received {:?}", data_type);
+        };
+        if items.len() != 3 {
+            bail!("Expected 3 items in Array, received {:?}", items.len());
+        }
+        let DataType::BulkString(cmd) = items.get(0).unwrap() else {
+            bail!(
+                "Expected cmd to be BulkString, received {:?}",
+                items.get(0).unwrap()
+            );
+        };
+        if cmd.to_lowercase() != "replconf" {
+            bail!("Expected 'replconf' in first item, received {:?}", cmd);
+        }
+        let DataType::BulkString(flag) = items.get(1).unwrap() else {
+            bail!(
+                "Expected flag to beflag to be  BulkString, received {:?}",
+                items.get(1).unwrap()
+            );
+        };
+        if flag.to_lowercase() != "ack" {
+            bail!("Expected 'ack' in second item, received {:?}", flag);
+        }
+        let DataType::BulkString(offset) = items.get(2).unwrap() else {
+            bail!(
+                "Expected offset BulkString, received {:?}",
+                items.get(2).unwrap()
+            );
+        };
+        let offset = offset
+            .parse::<usize>()
+            .context(fdbg!("Unable to parse offset for replconf ack response"))?;
+        Ok((cmd.to_owned(), flag.to_owned(), offset))
+    }
+
+    pub fn parse_rds_string<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+        let mut buf = [0; 1];
+        reader
+            .read_exact(&mut buf)
+            .context(fdbg!("Reading the datatype identifier for rds string"))?;
+        if buf[0] != b'$' {
+            bail!("Invalid RDS string identifier");
+        }
+        let length = DataType::read_count(reader)
+            .context(fdbg!("Unable to read length of RDSRDSRDS string"))?;
+        let mut content_buf = vec![0; length];
+
+        reader
+            .read_exact(&mut content_buf)
+            .context(fdbg!("Unable to read content of bulk string"))?;
+
+        info!(
+            "Looks like RDS file, first 5 bytes are {:?}",
+            std::str::from_utf8(&content_buf[..5])?
+        );
+        Ok(DataType::RDSFile(content_buf[..(length)].to_vec()))
+    }
     fn parse_inner<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let mut buf = [0; 1];
         let read_count = match reader.read(&mut buf) {
@@ -118,28 +181,6 @@ impl DataType {
             .context(fdbg!("Unable to convert bulk string to string"))?;
         // debug!("Bulk string content: {:?}", content);
         Ok(DataType::BulkString(content))
-    }
-    pub fn parse_rds_string<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
-        let mut buf = [0; 1];
-        reader
-            .read_exact(&mut buf)
-            .context(fdbg!("Reading the datatype identifier for rds string"))?;
-        if buf[0] != b'$' {
-            bail!("Invalid RDS string identifier");
-        }
-        let length = DataType::read_count(reader)
-            .context(fdbg!("Unable to read length of RDSRDSRDS string"))?;
-        let mut content_buf = vec![0; length];
-
-        reader
-            .read_exact(&mut content_buf)
-            .context(fdbg!("Unable to read content of bulk string"))?;
-
-        info!(
-            "Looks like RDS file, first 5 bytes are {:?}",
-            std::str::from_utf8(&content_buf[..5])?
-        );
-        Ok(DataType::RDSFile(content_buf[..(length)].to_vec()))
     }
     fn read_count<R: BufRead>(reader: &mut R) -> anyhow::Result<usize> {
         let mut buf = vec![];
