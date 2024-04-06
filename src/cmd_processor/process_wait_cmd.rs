@@ -38,15 +38,16 @@ pub fn process_wait_cmd(
                 break 'main_loop;
             }
             processed_replicas += 1;
-            debug!("Sending get ack to index({})", i);
             let mut stream = replicas
                 .unwrap()
                 .get(i)
                 .context(fdbg!("[{}] Unable to get replica from cache", i))?;
+            debug!("Sending get ack to index({})", i);
             stream
                 .write_all(&get_ack_command.as_bytes())
                 .context(fdbg!("[{}] Unable to write to stream for get ack", i))?;
             let (cmd, flag, offset) = run_get_ack(stream)?;
+            debug!("reading get ack to index({})", i);
             debug!(
                 "[{}] Received ack from replica: {} {} {}",
                 i, cmd, flag, offset
