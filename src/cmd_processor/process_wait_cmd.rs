@@ -1,4 +1,9 @@
-use std::{io::Write, net::TcpStream, sync::Arc, time::Instant};
+use std::{
+    io::{BufRead, Write},
+    net::TcpStream,
+    sync::Arc,
+    time::Instant,
+};
 
 use anyhow::Context;
 use tracing::debug;
@@ -79,6 +84,8 @@ fn run_get_ack(mut stream: TcpStream) -> anyhow::Result<(String, String, usize)>
         .context(fdbg!("Unable to write to stream for get ack"))?;
     let mut reader = std::io::BufReader::new(&stream);
     debug!("Trying to read ack reply from replica");
+    let len = reader.fill_buf()?;
+    debug!("Length of buffer. {:?}", len.len());
     loop {
         if let Ok(d) = DataType::parse_replconf_ack_offset(&mut reader) {
             return Ok(d);
