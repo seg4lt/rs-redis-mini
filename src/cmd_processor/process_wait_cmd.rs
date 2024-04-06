@@ -16,6 +16,7 @@ pub fn process_wait_cmd(
         debug!("No replicas to wait for. Returning 0 as acks received.");
         return Ok(DataType::Integer(0));
     }
+    debug!("Number of replica I have - {replicas_len}");
     let get_ack_command = DataType::Array(vec![
         DataType::BulkString("REPLCONF".into()),
         DataType::BulkString("GETACK".into()),
