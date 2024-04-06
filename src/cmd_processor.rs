@@ -4,8 +4,8 @@ use process_wait_cmd::process_wait_cmd;
 
 use std::{collections::HashMap, io::Write, net::TcpStream, sync::Arc, time::Duration};
 
-use anyhow::{anyhow, Context};
-use tracing::debug;
+use anyhow::{anyhow, bail, Context};
+use tracing::{debug, error};
 
 use crate::{
     cli_args::CliArgs,
@@ -99,7 +99,12 @@ fn process_replconf_cmd(option: &String, value: &String, map: &Arc<Store>) -> Da
             map.set(KEY_REPLICA_PORT.into(), value.clone(), None);
             DataType::SimpleString("OK".into())
         }
-        _ => DataType::SimpleString("OK".into()),
+        "capa" => DataType::SimpleString("OK".into()),
+        "ack" => DataType::EmptyString,
+        _ => {
+            error!("Unknown REPLCONF option: {}", option);
+            panic!("THIS SHOULD NOT HAPPEN")
+        }
     }
 }
 
