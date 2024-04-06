@@ -47,12 +47,12 @@ pub fn process_wait_cmd(
                 .write_all(&get_ack_command.as_bytes())
                 .context(fdbg!("[{}] Unable to write to stream for get ack", i));
             debug!("Reponse from write_all. {result:?}");
-            let (cmd, flag, offset) = run_get_ack(stream)?;
-            debug!("reading get ack to index({})", i);
-            debug!(
-                "[{}] Received ack from replica: {} {} {}",
-                i, cmd, flag, offset
-            );
+            // let (cmd, flag, offset) = run_get_ack(stream)?;
+            // debug!("reading get ack to index({})", i);
+            // debug!(
+            //     "[{}] Received ack from replica: {} {} {}",
+            //     i, cmd, flag, offset
+            // );
             ack_received += 1;
             if ack_received >= nacks_wanted {
                 break 'main_loop;
