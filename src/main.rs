@@ -8,7 +8,10 @@
 )]
 
 use anyhow::Context;
-use tokio::{io::BufReader, net::TcpListener};
+use tokio::{
+    io::BufReader,
+    net::{TcpListener, TcpStream},
+};
 use tracing::{debug, info};
 
 use crate::{log::setup_log, resp_type::parser::parse_request};
@@ -32,19 +35,28 @@ async fn main() -> anyhow::Result<()> {
     info!("Server started on 127.0.0.1:{port}");
 
     loop {
-        let (mut stream, _) = listener.accept().await?;
-        let (reader, mut writer) = stream.split();
-        let mut reader = BufReader::new(reader);
-        loop {
-            let end_stream = parse_request(&mut reader)
-                .await?
-                .to_client_cmd()?
-                .process_client_cmd(&mut writer)
+        let (stream, _) = listener.accept().await?;
+        tokio::spawn(async move {
+            handle_connection(stream)
                 .await
-                .context(fdbg!("Unable to write to client stream"))?;
-            if end_stream {
-                break;
-            }
+                .expect("Connection was disconnected with an error")
+        });
+    }
+}
+
+async fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
+    let (reader, mut writer) = stream.split();
+    let mut reader = BufReader::new(reader);
+    loop {
+        let end_stream = parse_request(&mut reader)
+            .await?
+            .to_client_cmd()?
+            .process_client_cmd(&mut writer)
+            .await
+            .context(fdbg!("Unable to write to client stream"))?;
+        if end_stream {
+            break;
         }
     }
+    Ok(())
 }
