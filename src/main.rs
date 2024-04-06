@@ -35,7 +35,8 @@ async fn main() -> anyhow::Result<()> {
     info!("Server started on 127.0.0.1:{port}");
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, addr) = listener.accept().await?;
+        debug!("Got a request from: {:?}", addr);
         tokio::spawn(async move {
             handle_connection(stream)
                 .await
