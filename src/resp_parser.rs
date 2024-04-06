@@ -129,7 +129,7 @@ impl DataType {
             // Unable to read anything, so noop is sent
             return Ok(DataType::EmptyString);
         }
-        // debug!("DataType identifier {:?}", buf[0].to_owned() as char);
+        debug!("DataType identifier {:?}", buf[0].to_owned() as char);
         match &buf[0] {
             b'*' => DataType::parse_array(reader).context(fdbg!("Unable to parse array")),
             b'$' => {
