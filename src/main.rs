@@ -7,12 +7,12 @@
     // clippy::cargo
 )]
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use tokio::{
-    io::AsyncReadExt,
+    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     net::{tcp::ReadHalf, TcpListener},
 };
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::log::setup_log;
 
@@ -33,17 +33,38 @@ async fn main() -> anyhow::Result<()> {
 
     loop {
         let (mut stream, _) = listener.accept().await?;
-        let (mut reader, _writer) = stream.split();
-        perform_request(&mut reader).await?; // Call perform_request with the reader as a parameter
+        let (reader, _writer) = stream.split();
+        let mut reader = BufReader::new(reader);
+        parse_request(&mut reader).await?; // Call perform_request with the reader as a parameter
     }
 }
 
-async fn perform_request<'a>(reader: &'a mut ReadHalf<'_>) -> anyhow::Result<()> {
+async fn parse_request<'a>(reader: &'a mut BufReader<ReadHalf<'_>>) -> anyhow::Result<()> {
     let mut buf = [0; 1];
     reader
         .read_exact(&mut buf)
         .await
         .context(fdbg!("Unable to read string from client"))?;
-    debug!("Buf: {}", buf[0] as char);
+    debug!(": {}", buf[0] as char);
+    match buf[0] {
+        b'*' => {
+            let count = read_count(reader).await?;
+            debug!("Length of an array: {:?}", count);
+        }
+        _ => bail!("Unable to determine data type: {}", buf[0] as char),
+    };
     Ok(())
+}
+async fn read_count<'a>(reader: &'a mut BufReader<ReadHalf<'_>>) -> anyhow::Result<usize> {
+    let mut buf = vec![];
+    let read_count = reader
+        .read_until(NEW_LINE, &mut buf)
+        .await
+        .context(fdbg!("Unable to read length of data"))?;
+    let number_part = &buf[..(read_count - LINE_ENDING.len())];
+    let length = std::str::from_utf8(number_part)
+        .context(fdbg!("Unable to convert length to string"))?
+        .parse::<usize>()
+        .context(fdbg!("Unable to parse length to usize"))?;
+    Ok(length)
 }
