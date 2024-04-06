@@ -1,6 +1,7 @@
 use std::{io::Write, net::TcpStream, sync::Arc};
 
 use anyhow::Context;
+use tracing::debug;
 
 use crate::{fdbg, resp_parser::DataType, store::Store, types::Replicas};
 
@@ -11,8 +12,11 @@ pub fn process_wait_cmd(
     replicas: Option<&Arc<Replicas>>,
 ) -> anyhow::Result<DataType> {
     let replicas_len = replicas.map(|r| r.len()).unwrap_or(0);
-
-    todo!()
+    if replicas_len == 0 {
+        debug!("No replicas to wait for. Returning 0 as acks received.");
+        return Ok(DataType::Integer(0));
+    }
+    return Ok(DataType::Integer(replicas_len as u64));
 }
 
 // pub fn process_wait_cmd(
