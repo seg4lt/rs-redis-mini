@@ -82,7 +82,7 @@ fn run_get_ack(mut stream: TcpStream) -> anyhow::Result<(String, String, usize)>
     stream
         .write_all(&get_ack_msg.as_bytes())
         .context(fdbg!("Unable to write to stream for get ack"))?;
-    let mut reader = std::io::BufReader::new(&stream);
+    let mut reader = std::io::BufReader::new(&mut stream);
     debug!("Trying to read ack reply from replica");
     let len = reader.fill_buf()?;
     debug!("Length of buffer. {:?}", len.len());
