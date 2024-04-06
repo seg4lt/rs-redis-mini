@@ -15,6 +15,7 @@ pub enum DataType {
     Integer(u64),
     EmptyString,
     NewLine(char),
+    Custom(String),
 }
 
 impl DataType {
@@ -39,6 +40,7 @@ impl DataType {
             }
             DataType::Integer(i) => format!(":{}{LINE_ENDING}", i).into_bytes(),
             DataType::EmptyString | DataType::NewLine(_) => vec![],
+            DataType::Custom(command) => command.as_bytes().to_vec(),
         }
     }
     pub fn parse<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
@@ -136,11 +138,20 @@ impl DataType {
             b'+' => DataType::parse_simple_string(reader)
                 .context(fdbg!("Unable to parse simple string")),
             b'\r' | b'\n' => Ok(DataType::NewLine(buf[0].to_owned() as char)),
+            b'`' => DataType::parse_custom_user_command(reader),
             foo => unimplemented!(
                 "Converting this data type is not implemented yet !!! - {:?}",
                 foo.to_owned() as char
             ),
         }
+    }
+    fn parse_custom_user_command<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
+        let mut buf = String::new();
+        reader
+            .read_line(&mut buf)
+            .context(fdbg!("Unable to read user command"))?;
+        let buf = &buf[..(buf.len() - 1)];
+        Ok(DataType::Custom(buf.to_owned()))
     }
     fn parse_simple_string<R: BufRead>(reader: &mut R) -> anyhow::Result<DataType> {
         let mut buf = vec![];

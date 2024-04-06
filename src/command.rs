@@ -17,6 +17,7 @@ pub enum Command {
     Wait(usize, u64),
     Noop(String),
     ConnectionClosed,
+    CustomUserCommand(String),
 }
 
 impl Command {
@@ -40,6 +41,7 @@ impl Command {
             | DataType::Integer(_) => Ok(Command::Noop(String::from_utf8(data_type.as_bytes())?)),
             DataType::NewLine(ch) => Ok(Command::Noop(format!("{}", ch))),
             DataType::RDSFile(_) => Ok(Command::Noop("RDSFile".into())),
+            DataType::Custom(command) => Ok(Command::CustomUserCommand(command)),
         }
     }
     fn from(command: &DataType, args: &[DataType]) -> anyhow::Result<Command> {
