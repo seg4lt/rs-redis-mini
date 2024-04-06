@@ -4,7 +4,7 @@ use crate::{
     command::Command,
     fdbg,
     resp_parser::DataType,
-    store::{Store, KEY_IS_MASTER},
+    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPL_OFFSET},
     types::Replicas,
 };
 use base64::prelude::*;
@@ -32,9 +32,36 @@ pub fn do_follow_up_if_needed(
     match command {
         Command::PSync(_, _) => send_rdb_to_replica(&mut current_stream)?,
         Command::Set(key, value, flags) => {
+            let mut items = vec![
+                DataType::BulkString("SET".into()),
+                DataType::BulkString(key.into()),
+                DataType::BulkString(value.into()),
+            ];
+            if let Some(flags) = flags {
+                flags.iter().for_each(|(key, value)| match key.as_str() {
+                    key if key == "get" && value == "true" => {
+                        items.push(DataType::BulkString("GET".into()))
+                    }
+                    "ex" | "px" => {
+                        items.push(DataType::BulkString(key.into()));
+                        items.push(DataType::BulkString(value.into()));
+                    }
+                    _ => {
+                        info!("SET doesn't understand the flag yet")
+                    }
+                });
+            }
+            let d_type = DataType::Array(items);
+            let offset = map
+                .get(KEY_MASTER_REPL_OFFSET.into())
+                .map(|v| v.parse::<usize>().unwrap())
+                .unwrap_or(0);
+            let offset = offset + d_type.as_bytes().len();
+            map.set(KEY_MASTER_REPL_OFFSET.into(), format!("{}", offset), None);
+
             for i in 0..num_of_replicas {
                 let mut stream = replicas.get(i).expect(&fdbg!("Replica not found"));
-                broadcast_set_cmd(&mut stream, &key, &value, &flags)?;
+                broadcast_set_cmd(&mut stream, &d_type)?;
             }
         }
         _ => {}
@@ -51,32 +78,7 @@ fn send_rdb_to_replica(stream: &mut TcpStream) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn broadcast_set_cmd(
-    stream: &mut TcpStream,
-    key: &String,
-    value: &String,
-    flags: &Option<HashMap<String, String>>,
-) -> anyhow::Result<()> {
-    let mut items = vec![
-        DataType::BulkString("SET".into()),
-        DataType::BulkString(key.into()),
-        DataType::BulkString(value.into()),
-    ];
-    if let Some(flags) = flags {
-        flags.iter().for_each(|(key, value)| match key.as_str() {
-            key if key == "get" && value == "true" => {
-                items.push(DataType::BulkString("GET".into()))
-            }
-            "ex" | "px" => {
-                items.push(DataType::BulkString(key.into()));
-                items.push(DataType::BulkString(value.into()));
-            }
-            _ => {
-                info!("SET doesn't understand the flag yet")
-            }
-        });
-    }
-    let d_type = DataType::Array(items);
+fn broadcast_set_cmd(stream: &mut TcpStream, d_type: &DataType) -> anyhow::Result<()> {
     info!("Broadcasting SET command - {d_type:?}");
     stream.write_all(&d_type.as_bytes())?;
     Ok(())
