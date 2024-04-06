@@ -17,11 +17,14 @@ pub async fn parse_request<'a>(
     reader: &'a mut BufReader<ReadHalf<'_>>,
 ) -> anyhow::Result<RESPType> {
     let mut buf = [0; 1];
-    reader
-        .read_exact(&mut buf)
+    let count = reader
+        .read(&mut buf)
         .await
         .context(fdbg!("Unable to read string from client"))?;
-    debug!("DataType identifying char: {}", buf[0] as char);
+    if count == 0 {
+        return Ok(RESPType::EOF);
+    }
+    // debug!("DataType identifying ASCII:({})", buf[0]);
     let request_resp_type = match buf[0] {
         b'*' => {
             let count = read_count(reader).await?;
@@ -33,6 +36,7 @@ pub async fn parse_request<'a>(
             RESPType::Array(items)
         }
         b'$' => read_bulk_string(reader).await?,
+        b'\n' | b'\r' => RESPType::CustomNewLine,
         _ => bail!("Unable to determine data type: {}", buf[0] as char),
     };
     debug!("Request RESPType - {:?}", request_resp_type);

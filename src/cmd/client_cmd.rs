@@ -4,12 +4,16 @@ use crate::resp_type::RESPType;
 
 pub enum ClientCmd {
     Ping,
+    CustomNewLine,
+    EOF,
 }
 
 impl RESPType {
     pub fn to_client_cmd(&self) -> anyhow::Result<ClientCmd> {
         match self {
             RESPType::Array(items) => parse_client_cmd(&items),
+            RESPType::CustomNewLine => Ok(ClientCmd::CustomNewLine),
+            RESPType::EOF => Ok(ClientCmd::EOF),
             _ => bail!("Client command must be of type array"),
         }
     }

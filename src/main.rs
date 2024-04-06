@@ -8,10 +8,7 @@
 )]
 
 use anyhow::Context;
-use tokio::{
-    io::{AsyncWriteExt, BufReader},
-    net::TcpListener,
-};
+use tokio::{io::BufReader, net::TcpListener};
 use tracing::{debug, info};
 
 use crate::{log::setup_log, resp_type::parser::parse_request};
@@ -38,13 +35,16 @@ async fn main() -> anyhow::Result<()> {
         let (mut stream, _) = listener.accept().await?;
         let (reader, mut writer) = stream.split();
         let mut reader = BufReader::new(reader);
-        let response = parse_request(&mut reader)
-            .await?
-            .to_client_cmd()?
-            .process_client_cmd()?;
-        writer
-            .write_all(&response.as_bytes())
-            .await
-            .context(fdbg!("Unable to write to client stream"))?;
+        loop {
+            let end_stream = parse_request(&mut reader)
+                .await?
+                .to_client_cmd()?
+                .process_client_cmd(&mut writer)
+                .await
+                .context(fdbg!("Unable to write to client stream"))?;
+            if end_stream {
+                break;
+            }
+        }
     }
 }

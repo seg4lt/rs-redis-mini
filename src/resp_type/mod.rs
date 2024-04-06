@@ -1,4 +1,4 @@
-use crate::LINE_ENDING;
+use crate::{LINE_ENDING, NEW_LINE};
 
 pub(crate) mod parser;
 
@@ -7,6 +7,8 @@ pub enum RESPType {
     Array(Vec<RESPType>),
     BulkString(String),
     SimpleString(String),
+    CustomNewLine,
+    EOF,
 }
 
 impl RESPType {
@@ -33,6 +35,10 @@ impl RESPType {
                 let mut result = vec![b'+'];
                 result.extend(string.as_bytes());
                 result.extend(LINE_ENDING);
+                result
+            }
+            RESPType::CustomNewLine | RESPType::EOF => {
+                let result = vec![NEW_LINE];
                 result
             }
         }
