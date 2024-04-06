@@ -38,6 +38,7 @@ pub fn process_wait_cmd(
                 break 'main_loop;
             }
             processed_replicas += 1;
+            debug!("Sending get ack to index({})", i);
             let mut stream = replicas
                 .unwrap()
                 .get(i)
