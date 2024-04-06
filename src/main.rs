@@ -1,9 +1,9 @@
 use crate::{
     cli_args::CliArgs,
-    store::{Store, KEY_IS_MASTER, KEY_IS_WAIT_RUNNING, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET},
+    store::{Store, KEY_IS_MASTER, KEY_MASTER_REPLID, KEY_MASTER_REPL_OFFSET},
     types::Replicas,
 };
-use std::{collections::HashMap, net::TcpListener, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::TcpListener, sync::Arc};
 
 use anyhow::{anyhow, Context};
 use tracing::{debug, info, Level};
