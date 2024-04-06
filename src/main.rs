@@ -8,6 +8,7 @@
 )]
 
 use anyhow::{bail, Context};
+use async_recursion::async_recursion;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     net::{tcp::ReadHalf, TcpListener},
@@ -39,17 +40,35 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+#[async_recursion]
 async fn parse_request<'a>(reader: &'a mut BufReader<ReadHalf<'_>>) -> anyhow::Result<()> {
     let mut buf = [0; 1];
     reader
         .read_exact(&mut buf)
         .await
         .context(fdbg!("Unable to read string from client"))?;
-    debug!(": {}", buf[0] as char);
+    debug!("DataType identifying char: {}", buf[0] as char);
     match buf[0] {
         b'*' => {
             let count = read_count(reader).await?;
             debug!("Length of an array: {:?}", count);
+            let mut buf = [0; 1];
+            reader
+                .read_exact(&mut buf)
+                .await
+                .context(fdbg!("Unable to read string from client"))?;
+            debug!("Next Char {}", buf[0] as char);
+            parse_request(reader).await?;
+        }
+        b'$' => {
+            let count = read_count(reader).await?;
+            debug!("Length of an string: {:?}", count);
+            let mut buf = [0; 1];
+            reader
+                .read_exact(&mut buf)
+                .await
+                .context(fdbg!("Unable to read string from client"))?;
+            debug!("Next Char {}", buf[0] as char);
         }
         _ => bail!("Unable to determine data type: {}", buf[0] as char),
     };
