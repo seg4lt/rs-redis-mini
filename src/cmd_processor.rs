@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
-use tracing::{debug, span, Level};
+use tracing::{debug, span, trace, Level};
 
 use crate::{
     cli_args::CliArgs,
@@ -70,6 +70,7 @@ fn process_wait_cmd(
 ) -> anyhow::Result<DataType> {
     let span = span!(Level::DEBUG, "process_wait_cmd");
     let _guard = span.enter();
+
     let replicas = match replicas {
         None => {
             debug!("No replicas to wait for. Returning 0 as acks received.");
@@ -77,6 +78,12 @@ fn process_wait_cmd(
         }
         Some(r) => r.to_owned(),
     };
+    trace!(
+        "Number of acks wanted: {}, timeout_ms: {}",
+        nacks_wanted,
+        timeout_ms
+    );
+    trace!("Number of replicas I have right now - {:?}", replicas.len());
     map.set(
         KEY_IS_WAIT_RUNNING.into(),
         "true".into(),
