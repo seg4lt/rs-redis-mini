@@ -16,8 +16,12 @@ use tokio::{
 };
 use tracing::debug;
 
-use crate::{kvstore::prepare_kvstore_channel, log::setup_log, resp_type::parser::parse_request};
+use crate::{
+    cli_args::CliArgs, kvstore::prepare_kvstore_channel, log::setup_log,
+    resp_type::parser::parse_request,
+};
 
+pub(crate) mod cli_args;
 pub(crate) mod cmd_parser;
 pub(crate) mod cmd_processor;
 pub(crate) mod kvstore;
@@ -30,8 +34,9 @@ pub const NEW_LINE: u8 = b'\n';
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     setup_log()?;
+
     debug!("🚀🚀🚀 Logs from your program will appear here! 🚀🚀🚀");
-    let port = 6_379_u16;
+    let port = CliArgs::get_port();
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
         .await
         .unwrap();
@@ -58,7 +63,7 @@ async fn handle_connection(mut stream: TcpStream, kv_chan: KvChan) -> anyhow::Re
             .process_client_cmd(&mut writer, &kv_chan)
             .await
             .context(fdbg!("Unable to write to client stream"))?;
-        if let ClientCmd::EOF = client_cmd {
+        if let ClientCmd::ExitConn = client_cmd {
             break;
         }
         writer.flush().await?;

@@ -16,7 +16,7 @@ pub enum ClientCmd {
         flags: HashMap<String, String>,
     },
     CustomNewLine,
-    EOF,
+    ExitConn,
 }
 
 impl ClientCmd {
@@ -24,7 +24,7 @@ impl ClientCmd {
         match resp_type {
             RESPType::Array(items) => parse_client_cmd(&items),
             RESPType::CustomNewLine => Ok(ClientCmd::CustomNewLine),
-            RESPType::EOF => Ok(ClientCmd::EOF),
+            RESPType::EOF => Ok(ClientCmd::ExitConn),
             _ => bail!("Client command must be of type array"),
         }
     }
@@ -88,6 +88,7 @@ fn parse_set_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
         flags,
     })
 }
+
 fn parse_echo_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
     let Some(RESPType::BulkString(value)) = items.get(0) else {
         bail!(fdbg!("ECHO command must have at least one argument"));

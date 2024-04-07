@@ -46,7 +46,7 @@ impl ClientCmd {
                     }
                 }
             }
-            CustomNewLine | EOF => {}
+            CustomNewLine | ExitConn => {}
         };
         Ok(())
     }
