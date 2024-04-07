@@ -29,6 +29,7 @@ pub async fn parse_request<'a>(
         b'*' => {
             let count = read_count(reader).await?;
             let mut items: Vec<RESPType> = Vec::with_capacity(count);
+            debug!("Count of items in request - {}", count);
             for _ in 0..count {
                 let item = parse_request(reader).await?;
                 items.push(item);
@@ -47,12 +48,12 @@ pub async fn read_bulk_string<'a>(
     reader: &'a mut BufReader<ReadHalf<'_>>,
 ) -> anyhow::Result<RESPType> {
     let length = read_count(reader).await?;
-    let mut buf = vec![0; length];
+    let mut buf = vec![0; length + LINE_ENDING.len()];
     reader
         .read_exact(&mut buf)
         .await
         .context(fdbg!("Unable to read string from reader"))?;
-    let string = std::str::from_utf8(&buf)
+    let string = std::str::from_utf8(&buf[..length])
         .context(fdbg!("Unable to convert bytes to string"))?
         .to_string();
     Ok(RESPType::BulkString(string))

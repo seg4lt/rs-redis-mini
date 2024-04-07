@@ -1,9 +1,10 @@
 use anyhow::bail;
 
-use crate::resp_type::RESPType;
+use crate::{fdbg, resp_type::RESPType};
 
 pub enum ClientCmd {
     Ping,
+    Echo(String),
     CustomNewLine,
     EOF,
 }
@@ -29,6 +30,13 @@ fn parse_client_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
     let cmd = cmd.to_uppercase();
     match cmd.as_str() {
         "PING" => Ok(ClientCmd::Ping),
+        "ECHO" => parse_echo_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
+}
+fn parse_echo_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
+    let Some(RESPType::BulkString(value)) = items.get(0) else {
+        bail!(fdbg!("ECHO command must have at least one argument"));
+    };
+    Ok(ClientCmd::Echo(value.to_owned()))
 }

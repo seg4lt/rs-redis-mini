@@ -8,6 +8,7 @@
 )]
 
 use anyhow::Context;
+use cmd::client_cmd::ClientCmd;
 use tokio::{
     io::BufReader,
     net::{TcpListener, TcpStream},
@@ -49,13 +50,11 @@ async fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.split();
     let mut reader = BufReader::new(reader);
     loop {
-        let end_stream = parse_request(&mut reader)
-            .await?
-            .to_client_cmd()?
-            .process_client_cmd(&mut writer)
+        let cmd = parse_request(&mut reader).await?.to_client_cmd()?;
+        cmd.process_client_cmd(&mut writer)
             .await
             .context(fdbg!("Unable to write to client stream"))?;
-        if end_stream {
+        if let ClientCmd::EOF = cmd {
             break;
         }
     }
