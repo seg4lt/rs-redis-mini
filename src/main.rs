@@ -94,7 +94,7 @@ async fn handle_connection(
 async fn prepare_kvstore_channel() -> mpsc::Sender<KvStoreCmd> {
     let (tx, mut rx) = channel::<KvStoreCmd>(100);
     tokio::spawn(async move {
-        let span = span!(Level::TRACE, "KvStoreChannel");
+        let span = span!(Level::DEBUG, "KvStoreChannel");
         let _guard = span.enter();
         let mut map = HashMap::<String, String>::new();
         while let Some(cmd) = rx.recv().await {

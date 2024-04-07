@@ -34,9 +34,19 @@ fn parse_client_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
         "PING" => Ok(ClientCmd::Ping),
         "ECHO" => parse_echo_cmd(&items[1..]),
         "SET" => parse_set_cmd(&items[1..]),
+        "GET" => parse_get_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
 }
+fn parse_get_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
+    let Some(RESPType::BulkString(key)) = items.get(0) else {
+        bail!(fdbg!("GEt command must have at least key"));
+    };
+    Ok(ClientCmd::Get {
+        key: key.to_owned(),
+    })
+}
+
 fn parse_set_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
     let Some(RESPType::BulkString(key)) = items.get(0) else {
         bail!(fdbg!("SET command must have at least key"));
