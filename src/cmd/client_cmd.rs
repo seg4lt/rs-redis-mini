@@ -5,6 +5,8 @@ use crate::{fdbg, resp_type::RESPType};
 pub enum ClientCmd {
     Ping,
     Echo(String),
+    Get { key: String },
+    Set { key: String, value: String },
     CustomNewLine,
     EOF,
 }
@@ -31,8 +33,21 @@ fn parse_client_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
     match cmd.as_str() {
         "PING" => Ok(ClientCmd::Ping),
         "ECHO" => parse_echo_cmd(&items[1..]),
+        "SET" => parse_set_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
+}
+fn parse_set_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
+    let Some(RESPType::BulkString(key)) = items.get(0) else {
+        bail!(fdbg!("SET command must have at least key"));
+    };
+    let Some(RESPType::BulkString(value)) = items.get(1) else {
+        bail!(fdbg!("SET command must have at least value"));
+    };
+    Ok(ClientCmd::Set {
+        key: key.to_owned(),
+        value: value.to_owned(),
+    })
 }
 fn parse_echo_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
     let Some(RESPType::BulkString(value)) = items.get(0) else {
