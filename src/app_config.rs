@@ -11,6 +11,8 @@ static APP_CONFIGS: OnceLock<AppConfigMap> = OnceLock::new();
 pub enum AppConfig {
     Port(u16),
     ReplicaOf(String, String),
+    MasterReplId(String),
+    MasterReplOffset(u128),
 }
 impl AppConfig {
     pub(crate) fn get_port() -> u16 {
@@ -25,6 +27,24 @@ impl AppConfig {
     pub(crate) fn is_master() -> bool {
         let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
         args.get("--replicaof").is_none()
+    }
+    pub(crate) fn get_master_replid() -> String {
+        let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
+        args.get("$$master_replid")
+            .map(|v| match v {
+                AppConfig::MasterReplId(replid) => replid.clone(),
+                _ => "".to_string(),
+            })
+            .unwrap_or("".to_string())
+    }
+    pub(crate) fn get_master_repl_offset() -> u128 {
+        let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
+        args.get("$$master_repl_offset")
+            .map(|v| match v {
+                AppConfig::MasterReplOffset(offset) => *offset,
+                _ => 0,
+            })
+            .unwrap_or(0)
     }
     pub fn init() -> anyhow::Result<AppConfigMap> {
         let mut args = std::env::args();
@@ -54,6 +74,25 @@ impl AppConfig {
                 _ => Err(anyhow!("Unknown argument"))?,
             };
             map.insert(arg, cli_arg);
+        }
+
+        match map.get("--replicaof") {
+            None => {
+                let alpha_numeric = b"abcdefghijklmnopqrstuvwxyz0123456789";
+                let hash = (0..40)
+                    .map(|_| {
+                        let idx = rand::random::<usize>() % alpha_numeric.len();
+                        *alpha_numeric.get(idx).unwrap()
+                    })
+                    .collect::<Vec<u8>>();
+                let hash = String::from_utf8(hash).unwrap();
+                map.insert("$$master_replid".to_string(), AppConfig::MasterReplId(hash));
+                map.insert(
+                    "$$master_repl_offset".to_string(),
+                    AppConfig::MasterReplOffset(0),
+                );
+            }
+            _ => {}
         }
         debug!("AppConfigs ➡️  {map:?}");
         Ok(map)

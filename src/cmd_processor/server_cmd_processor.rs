@@ -56,9 +56,15 @@ impl ClientCmd {
                     false => "slave",
                 };
                 let join = std::str::from_utf8(LINE_ENDING)?;
-                let info_string = RESPType::BulkString(
-                    vec!["# Replication".to_string(), format!("role:{}", role)].join(join),
-                );
+                let mut info_vec = vec!["# Replication".to_string(), format!("role:{}", role)];
+                if is_master {
+                    info_vec.push(format!("master_replid:{}", AppConfig::get_master_replid()));
+                    info_vec.push(format!(
+                        "master_repl_offset:{}",
+                        AppConfig::get_master_repl_offset()
+                    ));
+                }
+                let info_string = RESPType::BulkString(info_vec.join(join));
                 writer.write_all(&info_string.as_bytes()).await?;
             }
             CustomNewLine | ExitConn => {}
