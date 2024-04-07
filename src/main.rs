@@ -7,46 +7,25 @@
     // clippy::cargo
 )]
 
-use std::collections::HashMap;
-
 use anyhow::Context;
-use cmd::client_cmd::ClientCmd;
+use cmd_parser::client_cmd::ClientCmd;
+use kvstore::{KvChan, KvStoreCmd};
 use tokio::{
     io::{AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
-    sync::{
-        mpsc::{self, channel},
-        oneshot,
-    },
 };
-use tracing::{debug, info, span, Level};
+use tracing::debug;
 
-use crate::{log::setup_log, resp_type::parser::parse_request};
+use crate::{kvstore::prepare_kvstore_channel, log::setup_log, resp_type::parser::parse_request};
 
-pub(crate) mod cmd;
+pub(crate) mod cmd_parser;
 pub(crate) mod cmd_processor;
+pub(crate) mod kvstore;
 pub(crate) mod log;
 pub(crate) mod resp_type;
 
 pub const LINE_ENDING: &[u8; 2] = b"\r\n";
 pub const NEW_LINE: u8 = b'\n';
-
-#[derive(Debug)]
-pub enum KvStoreCmd {
-    Set {
-        key: String,
-        value: String,
-    },
-    SetWithGet {
-        resp: oneshot::Sender<Option<String>>,
-        key: String,
-        value: String,
-    },
-    Get {
-        resp: oneshot::Sender<Option<String>>,
-        key: String,
-    },
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -69,10 +48,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn handle_connection(
-    mut stream: TcpStream,
-    kv_chan: mpsc::Sender<KvStoreCmd>,
-) -> anyhow::Result<()> {
+async fn handle_connection(mut stream: TcpStream, kv_chan: KvChan) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.split();
     let mut reader = BufReader::new(reader);
     loop {
@@ -89,34 +65,4 @@ async fn handle_connection(
     }
     debug!("Connection closed successfully!");
     Ok(())
-}
-
-async fn prepare_kvstore_channel() -> mpsc::Sender<KvStoreCmd> {
-    let (tx, mut rx) = channel::<KvStoreCmd>(100);
-    tokio::spawn(async move {
-        let span = span!(Level::DEBUG, "KvStoreChannel");
-        let _guard = span.enter();
-        let mut map = HashMap::<String, String>::new();
-        while let Some(cmd) = rx.recv().await {
-            match cmd {
-                KvStoreCmd::Set { key, value } => {
-                    info!("Setting key: {} with value: {}", key, value);
-                    map.insert(key, value);
-                }
-                KvStoreCmd::SetWithGet { resp, key, value } => {
-                    info!("Setting key: {} with value: {}", key, value);
-                    let prev_value = map.get(&key).map(|v| v.clone());
-                    map.insert(key, value);
-                    resp.send(prev_value).unwrap();
-                }
-                KvStoreCmd::Get { resp, key } => {
-                    info!("Getting value for key: {}", key);
-                    let prev_value = map.get(&key).map(|v| v.clone());
-                    // Ignoring error for now
-                    let _ = resp.send(prev_value);
-                }
-            }
-        }
-    });
-    tx
 }

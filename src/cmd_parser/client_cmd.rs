@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::bail;
 
 use crate::{fdbg, resp_type::RESPType};
@@ -5,8 +7,14 @@ use crate::{fdbg, resp_type::RESPType};
 pub enum ClientCmd {
     Ping,
     Echo(String),
-    Get { key: String },
-    Set { key: String, value: String },
+    Get {
+        key: String,
+    },
+    Set {
+        key: String,
+        value: String,
+        flags: HashMap<String, String>,
+    },
     CustomNewLine,
     EOF,
 }
@@ -54,9 +62,30 @@ fn parse_set_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
     let Some(RESPType::BulkString(value)) = items.get(1) else {
         bail!(fdbg!("SET command must have at least value"));
     };
+    let mut remaining = items[2..].iter();
+    let mut flags: HashMap<String, String> = HashMap::new();
+    while let Some(flag) = remaining.next() {
+        let RESPType::BulkString(flag) = flag else {
+            break;
+        };
+        let flag = flag.to_lowercase();
+        match flag.as_str() {
+            "px" | "ex" => {
+                let Some(RESPType::BulkString(value)) = remaining.next() else {
+                    bail!(fdbg!("Missing value for flag: {}", flag));
+                };
+                flags.insert(flag, value.to_owned());
+            }
+            "get" => {
+                flags.insert(flag, "true".to_owned());
+            }
+            _ => {}
+        }
+    }
     Ok(ClientCmd::Set {
         key: key.to_owned(),
         value: value.to_owned(),
+        flags,
     })
 }
 fn parse_echo_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
