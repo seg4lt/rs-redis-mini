@@ -9,9 +9,9 @@ pub enum ClientCmd {
     EOF,
 }
 
-impl RESPType {
-    pub fn to_client_cmd(&self) -> anyhow::Result<ClientCmd> {
-        match self {
+impl ClientCmd {
+    pub fn from_resp_type(resp_type: &RESPType) -> anyhow::Result<Self> {
+        match resp_type {
             RESPType::Array(items) => parse_client_cmd(&items),
             RESPType::CustomNewLine => Ok(ClientCmd::CustomNewLine),
             RESPType::EOF => Ok(ClientCmd::EOF),
