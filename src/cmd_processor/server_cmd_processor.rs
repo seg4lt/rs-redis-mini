@@ -1,6 +1,9 @@
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
 
-use crate::{cmd_parser::client_cmd::ClientCmd, kvstore::KvChan, resp_type::RESPType, KvStoreCmd};
+use crate::{
+    app_config::AppConfig, cmd_parser::client_cmd::ClientCmd, kvstore::KvChan, resp_type::RESPType,
+    KvStoreCmd, LINE_ENDING,
+};
 use ClientCmd::*;
 
 impl ClientCmd {
@@ -45,6 +48,18 @@ impl ClientCmd {
                         writer.write_all(&resp_type.as_bytes()).await?;
                     }
                 }
+            }
+            Info { .. } => {
+                let is_master = AppConfig::is_master();
+                let role = match is_master {
+                    true => "master",
+                    false => "slave",
+                };
+                let join = std::str::from_utf8(LINE_ENDING)?;
+                let info_string = RESPType::BulkString(
+                    vec!["# Replication".to_string(), format!("role:{}", role)].join(join),
+                );
+                writer.write_all(&info_string.as_bytes()).await?;
             }
             CustomNewLine | ExitConn => {}
         };

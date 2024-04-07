@@ -1,27 +1,32 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
 use anyhow::anyhow;
 use tracing::debug;
 
-static CLI_ARGS: std::sync::OnceLock<HashMap<String, CliArgs>> =
-    std::sync::OnceLock::<HashMap<String, CliArgs>>::new();
+type AppConfigMap = HashMap<String, AppConfig>;
+
+static APP_CONFIGS: OnceLock<AppConfigMap> = OnceLock::new();
 
 #[derive(Debug, Clone)]
-pub enum CliArgs {
+pub enum AppConfig {
     Port(u16),
     ReplicaOf(String, String),
 }
-impl CliArgs {
+impl AppConfig {
     pub(crate) fn get_port() -> u16 {
-        let args = CLI_ARGS.get_or_init(|| Self::init().unwrap());
+        let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
         args.get("--port")
             .map(|v| match v {
-                CliArgs::Port(port) => *port,
+                AppConfig::Port(port) => *port,
                 _ => 6_379_u16,
             })
             .unwrap_or(6_379_u16)
     }
-    pub fn init() -> anyhow::Result<HashMap<String, CliArgs>> {
+    pub(crate) fn is_master() -> bool {
+        let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
+        args.get("--replicaof").is_none()
+    }
+    pub fn init() -> anyhow::Result<AppConfigMap> {
         let mut args = std::env::args();
         args.next();
         let mut map = HashMap::new();
@@ -31,7 +36,7 @@ impl CliArgs {
                 "--port" => match args.next() {
                     Some(port) => {
                         let port = port.parse::<u16>()?;
-                        CliArgs::Port(port)
+                        AppConfig::Port(port)
                     }
                     None => Err(anyhow!("Port number not provided"))?,
                 },
@@ -44,13 +49,13 @@ impl CliArgs {
                         Some(port) => port,
                         None => Err(anyhow!("replicaof port number not provided"))?,
                     };
-                    CliArgs::ReplicaOf(host, port)
+                    AppConfig::ReplicaOf(host, port)
                 }
                 _ => Err(anyhow!("Unknown argument"))?,
             };
             map.insert(arg, cli_arg);
         }
-        debug!("CliArgs ➡️  {map:?}");
+        debug!("AppConfigs ➡️  {map:?}");
         Ok(map)
     }
 }

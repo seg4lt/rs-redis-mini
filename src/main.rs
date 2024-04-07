@@ -17,11 +17,11 @@ use tokio::{
 use tracing::debug;
 
 use crate::{
-    cli_args::CliArgs, kvstore::prepare_kvstore_channel, log::setup_log,
+    app_config::AppConfig, kvstore::prepare_kvstore_channel, log::setup_log,
     resp_type::parser::parse_request,
 };
 
-pub(crate) mod cli_args;
+pub(crate) mod app_config;
 pub(crate) mod cmd_parser;
 pub(crate) mod cmd_processor;
 pub(crate) mod kvstore;
@@ -34,9 +34,8 @@ pub const NEW_LINE: u8 = b'\n';
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     setup_log()?;
-
     debug!("🚀🚀🚀 Logs from your program will appear here! 🚀🚀🚀");
-    let port = CliArgs::get_port();
+    let port = AppConfig::get_port();
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
         .await
         .unwrap();

@@ -15,6 +15,9 @@ pub enum ClientCmd {
         value: String,
         flags: HashMap<String, String>,
     },
+    Info {
+        key: String,
+    },
     CustomNewLine,
     ExitConn,
 }
@@ -43,9 +46,20 @@ fn parse_client_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
         "ECHO" => parse_echo_cmd(&items[1..]),
         "SET" => parse_set_cmd(&items[1..]),
         "GET" => parse_get_cmd(&items[1..]),
+        "INFO" => parse_info_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
 }
+
+fn parse_info_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
+    let Some(RESPType::BulkString(key)) = items.get(0) else {
+        bail!(fdbg!("INFO command must have at least one key"));
+    };
+    Ok(ClientCmd::Info {
+        key: key.to_string(),
+    })
+}
+
 fn parse_get_cmd(items: &[RESPType]) -> anyhow::Result<ClientCmd> {
     let Some(RESPType::BulkString(key)) = items.get(0) else {
         bail!(fdbg!("GEt command must have at least key"));
