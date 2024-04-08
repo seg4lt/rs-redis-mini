@@ -17,13 +17,14 @@ use tokio::{
 use tracing::debug;
 
 use crate::{
-    app_config::AppConfig, kvstore::prepare_kvstore_channel, log::setup_log,
-    resp_type::parser::parse_request,
+    app_config::AppConfig, conn_with_master::prepare_conn_with_master,
+    kvstore::prepare_kvstore_channel, log::setup_log, resp_type::parser::parse_request,
 };
 
 pub(crate) mod app_config;
 pub(crate) mod cmd_parser;
 pub(crate) mod cmd_processor;
+pub(crate) mod conn_with_master;
 pub(crate) mod kvstore;
 pub(crate) mod log;
 pub(crate) mod resp_type;
@@ -40,6 +41,8 @@ async fn main() -> anyhow::Result<()> {
         .await
         .unwrap();
     let kv_chan = prepare_kvstore_channel().await;
+    prepare_conn_with_master().await?;
+
     loop {
         let (stream, addr) = listener.accept().await?;
         debug!("Got a request from: {:?}", addr);

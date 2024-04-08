@@ -11,6 +11,8 @@ use crate::{fdbg, LINE_ENDING, NEW_LINE};
 
 use super::RESPType;
 
+type Reader<'a> = BufReader<ReadHalf<'a>>;
+
 // TODO: Need to study more on Box::pin
 #[async_recursion]
 pub async fn parse_request<'a>(
@@ -37,11 +39,20 @@ pub async fn parse_request<'a>(
             RESPType::Array(items)
         }
         b'$' => read_bulk_string(reader).await?,
+        b'+' => read_simple_string(reader).await?,
         b'\n' | b'\r' => RESPType::CustomNewLine,
         _ => bail!("Unable to determine data type: {}", buf[0] as char),
     };
     debug!("Request RESPType - {:?}", request_resp_type);
     Ok(request_resp_type)
+}
+
+pub(crate) async fn read_simple_string<'a>(reader: &'a mut Reader<'_>) -> anyhow::Result<RESPType> {
+    let mut buf = vec![];
+    reader.read_until(NEW_LINE, &mut buf).await?;
+    let content = std::str::from_utf8(&buf[..buf.len() - LINE_ENDING.len()])
+        .context(fdbg!("Unable to convert bytes to string"))?;
+    Ok(RESPType::SimpleString(content.to_string()))
 }
 
 pub async fn read_bulk_string<'a>(

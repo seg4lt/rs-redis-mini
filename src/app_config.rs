@@ -28,6 +28,13 @@ impl AppConfig {
         let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
         args.get("--replicaof").is_none()
     }
+    pub(crate) fn get_replicaof() -> Option<(String, String)> {
+        let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
+        let Some(AppConfig::ReplicaOf(host, port)) = args.get("--replicaof") else {
+            return None;
+        };
+        Some((host.to_owned(), port.to_owned()))
+    }
     pub(crate) fn get_master_replid() -> String {
         let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
         args.get("$$master_replid")
@@ -76,6 +83,7 @@ impl AppConfig {
             map.insert(arg, cli_arg);
         }
 
+        // Setup matser replication id and offset
         match map.get("--replicaof") {
             None => {
                 let alpha_numeric = b"abcdefghijklmnopqrstuvwxyz0123456789";
