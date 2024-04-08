@@ -29,7 +29,7 @@ pub(crate) mod kvstore;
 pub(crate) mod log;
 pub(crate) mod resp_type;
 
-pub const LINE_ENDING: &[u8; 2] = b"\r\n";
+pub const LINE_ENDING: &str = "\r\n";
 pub const NEW_LINE: u8 = b'\n';
 
 #[tokio::main]

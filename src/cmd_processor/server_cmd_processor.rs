@@ -55,7 +55,6 @@ impl ClientCmd {
                     true => "master",
                     false => "slave",
                 };
-                let join = std::str::from_utf8(LINE_ENDING)?;
                 let mut info_vec = vec!["# Replication".to_string(), format!("role:{}", role)];
                 if is_master {
                     info_vec.push(format!("master_replid:{}", AppConfig::get_master_replid()));
@@ -64,8 +63,19 @@ impl ClientCmd {
                         AppConfig::get_master_repl_offset()
                     ));
                 }
-                let info_string = RESPType::BulkString(info_vec.join(join));
+                let info_string = RESPType::BulkString(info_vec.join(LINE_ENDING));
                 writer.write_all(&info_string.as_bytes()).await?;
+            }
+            ReplConf { .. } => {
+                let resp_type = RESPType::SimpleString("OK".to_string());
+                writer.write_all(&resp_type.as_bytes()).await?;
+            }
+            Psync { .. } => {
+                let replid = AppConfig::get_master_replid();
+                let offset = AppConfig::get_master_repl_offset();
+                let content = format!("+FULLRESYNC {replid} {offset}{LINE_ENDING}");
+                let resp_type = RESPType::SimpleString(content);
+                writer.write_all(&resp_type.as_bytes()).await?;
             }
             CustomNewLine | ExitConn => {}
         };

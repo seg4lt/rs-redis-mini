@@ -67,6 +67,24 @@ pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
         let _response = parse_request(&mut reader)
             .await
             .expect("Should be able to parse OK");
+
+        // PSYNC
+        let repl_conf_capa_psync2 = RESPType::Array(vec![
+            RESPType::BulkString("PSYNC".to_string()),
+            RESPType::BulkString("?".to_string()),
+            RESPType::BulkString("-1".to_string()),
+        ]);
+        writer
+            .write_all(&repl_conf_capa_psync2.as_bytes())
+            .await
+            .expect("Should be able to write psync ? -1");
+        writer
+            .flush()
+            .await
+            .expect("Should be able to flush psync ? -1");
+        let _response = parse_request(&mut reader)
+            .await
+            .expect("Should be able to parse FULLRESYNC");
     });
     Ok(())
 }
