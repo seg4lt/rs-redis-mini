@@ -46,9 +46,9 @@ pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
             .flush()
             .await
             .expect("Should be able to flush replconf listening-port");
-        // let _response = parse_request(&mut reader)
-        //     .await
-        //     .expect("Should be able to parse OK");
+        let _response = parse_request(&mut reader)
+            .await
+            .expect("Should be able to parse OK");
 
         // REPL capa psync2
         let repl_conf_capa_psync2 = RESPType::Array(vec![
@@ -64,9 +64,9 @@ pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
             .flush()
             .await
             .expect("Should be able to flush replconf capa psync2");
-        // let _response = parse_request(&mut reader)
-        //     .await
-        //     .expect("Should be able to parse OK");
+        let _response = parse_request(&mut reader)
+            .await
+            .expect("Should be able to parse OK");
     });
     Ok(())
 }
