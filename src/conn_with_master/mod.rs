@@ -9,7 +9,10 @@ use tracing::{debug, span, Level};
 
 use crate::{
     app_config::AppConfig,
-    resp_type::{parser::parse_request, RESPType},
+    resp_type::{
+        parser::{parse_rdb_file, parse_request},
+        RESPType,
+    },
 };
 
 pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
@@ -25,8 +28,15 @@ pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
         let (reader, mut writer) = stream.split();
         let mut reader = BufReader::new(reader);
         handshake(&mut writer, &mut reader).await;
+        receive_rdb_file(&mut reader).await;
     });
     Ok(())
+}
+
+async fn receive_rdb_file(reader: &mut BufReader<ReadHalf<'_>>) {
+    parse_rdb_file(reader)
+        .await
+        .expect("Should be able to parse RDB file");
 }
 
 async fn handshake<'a>(writer: &mut WriteHalf<'_>, reader: &mut BufReader<ReadHalf<'_>>) {

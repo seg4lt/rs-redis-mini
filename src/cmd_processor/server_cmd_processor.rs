@@ -1,4 +1,5 @@
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
+use tracing::debug;
 
 use crate::{
     app_config::AppConfig, cmd_parser::client_cmd::ClientCmd, kvstore::KvChan, resp_type::RESPType,
@@ -73,9 +74,10 @@ impl ClientCmd {
             Psync { .. } => {
                 let replid = AppConfig::get_master_replid();
                 let offset = AppConfig::get_master_repl_offset();
-                let content = format!("+FULLRESYNC {replid} {offset}{LINE_ENDING}");
+                let content = format!("+FULLRESYNC {replid} {offset}");
                 let resp_type = RESPType::SimpleString(content);
                 writer.write_all(&resp_type.as_bytes()).await?;
+                writer.flush().await?;
                 send_rds_file(writer).await?;
             }
             CustomNewLine | ExitConn => {}
@@ -89,6 +91,11 @@ async fn send_rds_file(writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
     let rds_content = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
     let decoded = BASE64_STANDARD.decode(rds_content)?;
     let resp_type = RESPType::RDB(decoded);
+    debug!(
+        "Sending RDB file to client {:?}",
+        resp_type.as_bytes().len()
+    );
     writer.write_all(&resp_type.as_bytes()).await?;
+    writer.flush().await?;
     Ok(())
 }

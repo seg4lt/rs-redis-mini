@@ -76,10 +76,22 @@ pub async fn read_count<'a>(reader: &'a mut BufReader<ReadHalf<'_>>) -> anyhow::
         .read_until(NEW_LINE, &mut buf)
         .await
         .context(fdbg!("Unable to read length of data"))?;
+    debug!("Read count {read_count}");
     let number_part = &buf[..(read_count - LINE_ENDING.len())];
     let length = std::str::from_utf8(number_part)
         .context(fdbg!("Unable to convert length to string"))?
         .parse::<usize>()
         .context(fdbg!("Unable to parse length to usize"))?;
     Ok(length)
+}
+
+pub async fn parse_rdb_file<'a>(reader: &'a mut BufReader<ReadHalf<'_>>) -> anyhow::Result<()> {
+    let mut buf = [0; 1];
+    reader.read_exact(&mut buf).await?;
+    debug!("RESP first byte {}", buf[0]);
+    let length = read_count(reader).await?;
+    let mut content = vec![0; length];
+    reader.read_exact(&mut content).await?;
+    debug!("Read {} length data", content.len());
+    Ok(())
 }
