@@ -9,6 +9,7 @@ pub enum RESPType {
     Array(Vec<RESPType>),
     BulkString(String),
     NullBulkString,
+    RDB(Vec<u8>),
     SimpleString(String),
     CustomNewLine,
     EOF,
@@ -43,6 +44,13 @@ impl RESPType {
                 let mut result = vec![b'+'];
                 result.extend(string.as_bytes());
                 result.extend(LINE_ENDING.as_bytes().to_vec());
+                result
+            }
+            RDB(data) => {
+                let mut result = vec![b'$'];
+                result.extend(data.len().to_string().as_bytes());
+                result.extend(LINE_ENDING.as_bytes().to_vec());
+                result.extend(data);
                 result
             }
             CustomNewLine | RESPType::EOF => {

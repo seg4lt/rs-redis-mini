@@ -76,9 +76,19 @@ impl ClientCmd {
                 let content = format!("+FULLRESYNC {replid} {offset}{LINE_ENDING}");
                 let resp_type = RESPType::SimpleString(content);
                 writer.write_all(&resp_type.as_bytes()).await?;
+                send_rds_file(writer).await?;
             }
             CustomNewLine | ExitConn => {}
         };
         Ok(())
     }
+}
+
+async fn send_rds_file(writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+    use base64::prelude::*;
+    let rds_content = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+    let decoded = BASE64_STANDARD.decode(rds_content)?;
+    let resp_type = RESPType::RDB(decoded);
+    writer.write_all(&resp_type.as_bytes()).await?;
+    Ok(())
 }

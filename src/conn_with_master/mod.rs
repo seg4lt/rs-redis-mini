@@ -29,7 +29,7 @@ pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handshake<'a>(writer: &mut WriteHalf<'a>, reader: &mut BufReader<ReadHalf<'a>>) {
+async fn handshake<'a>(writer: &mut WriteHalf<'_>, reader: &mut BufReader<ReadHalf<'_>>) {
     // PING
     let ping = RESPType::Array(vec![RESPType::BulkString("PING".to_string())]);
     writer
