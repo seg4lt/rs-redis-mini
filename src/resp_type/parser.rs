@@ -31,7 +31,7 @@ pub async fn parse_request<'a>(
         b'*' => {
             let count = read_count(reader).await?;
             let mut items: Vec<RESPType> = Vec::with_capacity(count);
-            debug!("Count of items in request - {}", count);
+            // debug!("Count of items in request - {}", count);
             for _ in 0..count {
                 let item = parse_request(reader).await?;
                 items.push(item);
@@ -89,7 +89,7 @@ pub async fn read_count<'a>(reader: &'a mut BufReader<ReadHalf<'_>>) -> anyhow::
         .read_until(NEW_LINE, &mut buf)
         .await
         .context(fdbg!("Unable to read length of data"))?;
-    debug!("Read count {read_count}");
+    // debug!("Read count {read_count}");
     let number_part = &buf[..(read_count - LINE_ENDING.len())];
     let length = std::str::from_utf8(number_part)
         .context(fdbg!("Unable to convert length to string"))?

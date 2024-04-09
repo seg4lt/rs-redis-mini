@@ -13,10 +13,7 @@ impl SlaveCmd {
     ) -> anyhow::Result<()> {
         match self {
             Ping => {
-                let resp_type = RESPType::SimpleString("PONG".to_string());
-                debug!("Sending POING");
-                writer.write_all(&resp_type.as_bytes()).await?;
-                writer.flush().await?;
+                // not need to process
             }
             Set { key, value, flags } => {
                 let kv_cmd = KvStoreCmd::Set {
