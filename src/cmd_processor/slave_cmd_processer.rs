@@ -24,6 +24,7 @@ impl SlaveCmd {
                 kv_chan.send(kv_cmd).await?;
             }
             ReplConf { .. } => {
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
                 let resp_type = RESPType::Array(vec![
                     RESPType::BulkString("REPLCONF".to_string()),
                     RESPType::BulkString("ACK".to_string()),

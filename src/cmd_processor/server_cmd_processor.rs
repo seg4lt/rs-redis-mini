@@ -16,7 +16,7 @@ impl ClientCmd {
         &self,
         writer: &mut WriteHalf<'_>,
         kv_chan: &KvChan,
-        slave_chan: &Sender<MasterToSlaveCmd>,
+        slaves_chan: &Sender<MasterToSlaveCmd>,
     ) -> anyhow::Result<()> {
         match self {
             Ping => {
@@ -36,6 +36,13 @@ impl ClientCmd {
                 kv_chan.send(kv_cmd).await?;
                 let resp_type = RESPType::SimpleString("OK".to_string());
                 writer.write_all(&resp_type.as_bytes()).await?;
+                slaves_chan
+                    .send(MasterToSlaveCmd::Set {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        flags: flags.clone(),
+                    })
+                    .await?;
             }
             Get { key } => {
                 let (tx, rx) = oneshot::channel::<Option<String>>();
@@ -86,16 +93,47 @@ impl ClientCmd {
                 send_rds_file(writer).await?;
             }
             Wait {
-                num_replicas: _num_replicas,
+                num_replicas: min_acks_wanted,
                 timeout_ms: _timeout_ms,
             } => {
                 let (tx, rx) = oneshot::channel::<usize>();
-                slave_chan
-                    .send(MasterToSlaveCmd::GetNumOfReplicas { recv_chan: tx })
+                slaves_chan
+                    .send(MasterToSlaveCmd::GetNumOfReplicas { resp: tx })
                     .await?;
                 let num_replicas = rx.await?;
-                let resp_type = RESPType::Integer(num_replicas as i64);
-                writer.write_all(&resp_type.as_bytes()).await?;
+
+                match num_replicas {
+                    0 => {
+                        let resp_type = RESPType::Integer(num_replicas as i64);
+                        writer.write_all(&resp_type.as_bytes()).await?;
+                    }
+                    _ => {
+                        let (tx, rx) = oneshot::channel::<bool>();
+                        kv_chan
+                            .send(KvStoreCmd::WasLastCommandSet { resp: tx })
+                            .await?;
+                        let was_last_command_set = rx.await?;
+                        match was_last_command_set {
+                            false => {
+                                let resp_type = RESPType::Integer(num_replicas as i64);
+                                writer.write_all(&resp_type.as_bytes()).await?;
+                            }
+                            true => {
+                                let (tx, rx) = oneshot::channel::<usize>();
+                                slaves_chan
+                                    .send(MasterToSlaveCmd::GetAck {
+                                        min_ack: *min_acks_wanted,
+                                        resp: tx,
+                                    })
+                                    .await
+                                    .unwrap();
+                                let acks_received = rx.await?;
+                                let resp_type = RESPType::Integer(acks_received as i64);
+                                writer.write_all(&resp_type.as_bytes()).await?;
+                            }
+                        }
+                    }
+                }
             }
             CustomNewLine | ExitConn => {}
         };

@@ -29,6 +29,9 @@ pub enum KvStoreCmd {
         resp: oneshot::Sender<Option<String>>,
         key: String,
     },
+    WasLastCommandSet {
+        resp: oneshot::Sender<bool>,
+    },
 }
 
 pub struct KvStore {
@@ -41,11 +44,15 @@ pub async fn prepare_kvstore_channel() -> KvChan {
     let (tx, mut rx) = channel::<KvStoreCmd>(100);
     tokio::spawn(async move {
         let mut map: KvMap = HashMap::new();
+        let mut last_command_was_set = false;
         while let Some(cmd) = rx.recv().await {
             let span = span!(Level::DEBUG, "KvStoreChannel");
             let _guard = span.enter();
             match cmd {
-                Set { key, value, flags } => set(&key, &value, Some(&flags), &mut map),
+                Set { key, value, flags } => {
+                    set(&key, &value, Some(&flags), &mut map);
+                    last_command_was_set = true;
+                }
                 SetWithGet { key, value, resp } => {
                     let prev_value = get(&key, &mut map);
                     set(&key, &value, None, &mut map);
@@ -55,6 +62,11 @@ pub async fn prepare_kvstore_channel() -> KvChan {
                     let value = get(&key, &mut map);
                     // Ignoring error for now
                     let _ = resp.send(value);
+                    last_command_was_set = false;
+                }
+                WasLastCommandSet { resp } => {
+                    // Ignoring error for now
+                    let _ = resp.send(last_command_was_set);
                 }
             }
         }

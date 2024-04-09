@@ -80,16 +80,6 @@ async fn handle_connection(
             .process_client_cmd(&mut writer, &kv_chan, &slaves_chan)
             .await
             .context(fdbg!("Unable to write to client stream"))?;
-        if let ClientCmd::Set { key, value, flags } = &client_cmd {
-            slaves_chan
-                .send(MasterToSlaveCmd::Set {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                    flags: flags.clone(),
-                })
-                .await?;
-            continue;
-        }
         if let ClientCmd::Psync { .. } = client_cmd {
             slaves_chan
                 .send(MasterToSlaveCmd::SaveStream {
@@ -137,8 +127,34 @@ async fn prepare_master_to_slave_chan() -> mpsc::Sender<MasterToSlaveCmd> {
                         v.flush().await.unwrap();
                     }
                 }
-                GetNumOfReplicas { recv_chan } => {
+                GetNumOfReplicas { resp: recv_chan } => {
                     let _ = recv_chan.send(streams_map.len());
+                }
+                GetAck { min_ack, resp } => {
+                    let mut acks_received = 0;
+
+                    let req = RESPType::Array(vec![
+                        RESPType::BulkString("REPLCONF".to_string()),
+                        RESPType::BulkString("GETACK".to_string()),
+                        RESPType::BulkString("*".to_string()),
+                    ]);
+                    for (_, v) in &mut streams_map {
+                        let _ = v.write_all(&req.as_bytes()).await;
+                        v.flush().await.unwrap();
+                        let (reader, _) = v.split();
+                        let mut reader = BufReader::new(reader);
+                        let resp_type = parse_request(&mut reader).await.unwrap();
+                        debug!("RESP from slave - {:?}", resp_type);
+                        acks_received += 1;
+                        debug!(
+                            "Acks received {:?} -- min_acks -- {}",
+                            acks_received, min_ack
+                        );
+                        if acks_received >= min_ack {
+                            break;
+                        }
+                    }
+                    let _ = resp.send(acks_received);
                 }
             }
         }
@@ -159,6 +175,10 @@ pub enum MasterToSlaveCmd {
         flags: HashMap<String, String>,
     },
     GetNumOfReplicas {
-        recv_chan: oneshot::Sender<usize>,
+        resp: oneshot::Sender<usize>,
+    },
+    GetAck {
+        min_ack: usize,
+        resp: oneshot::Sender<usize>,
     },
 }
