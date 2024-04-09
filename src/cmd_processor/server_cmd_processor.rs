@@ -1,9 +1,13 @@
-use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
+use tokio::{
+    io::AsyncWriteExt,
+    net::tcp::WriteHalf,
+    sync::{mpsc::Sender, oneshot},
+};
 use tracing::debug;
 
 use crate::{
     app_config::AppConfig, cmd_parser::client_cmd::ClientCmd, kvstore::KvChan, resp_type::RESPType,
-    KvStoreCmd, LINE_ENDING,
+    KvStoreCmd, MasterToSlaveCmd, LINE_ENDING,
 };
 use ClientCmd::*;
 
@@ -12,6 +16,7 @@ impl ClientCmd {
         &self,
         writer: &mut WriteHalf<'_>,
         kv_chan: &KvChan,
+        slave_chan: &Sender<MasterToSlaveCmd>,
     ) -> anyhow::Result<()> {
         match self {
             Ping => {
@@ -84,7 +89,12 @@ impl ClientCmd {
                 num_replicas: _num_replicas,
                 timeout_ms: _timeout_ms,
             } => {
-                let resp_type = RESPType::Integer(0);
+                let (tx, rx) = oneshot::channel::<usize>();
+                slave_chan
+                    .send(MasterToSlaveCmd::GetNumOfReplicas { recv_chan: tx })
+                    .await?;
+                let num_replicas = rx.await?;
+                let resp_type = RESPType::Integer(num_replicas as i64);
                 writer.write_all(&resp_type.as_bytes()).await?;
             }
             CustomNewLine | ExitConn => {}

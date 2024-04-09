@@ -15,7 +15,10 @@ use kvstore::{KvChan, KvStoreCmd};
 use tokio::{
     io::{AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
-    sync::mpsc::{self, Sender},
+    sync::{
+        mpsc::{self, Sender},
+        oneshot,
+    },
 };
 use tracing::debug;
 
@@ -74,7 +77,7 @@ async fn handle_connection(
         let resp_type = parse_request(&mut reader).await?;
         let client_cmd = ClientCmd::from_resp_type(&resp_type)?;
         client_cmd
-            .process_client_cmd(&mut writer, &kv_chan)
+            .process_client_cmd(&mut writer, &kv_chan, &slaves_chan)
             .await
             .context(fdbg!("Unable to write to client stream"))?;
         if let ClientCmd::Set { key, value, flags } = &client_cmd {
@@ -134,6 +137,9 @@ async fn prepare_master_to_slave_chan() -> mpsc::Sender<MasterToSlaveCmd> {
                         v.flush().await.unwrap();
                     }
                 }
+                GetNumOfReplicas { recv_chan } => {
+                    let _ = recv_chan.send(streams_map.len());
+                }
             }
         }
     });
@@ -151,5 +157,8 @@ pub enum MasterToSlaveCmd {
         key: String,
         value: String,
         flags: HashMap<String, String>,
+    },
+    GetNumOfReplicas {
+        recv_chan: oneshot::Sender<usize>,
     },
 }
