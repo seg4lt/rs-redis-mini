@@ -14,7 +14,9 @@ impl SlaveCmd {
         match self {
             Ping => {
                 let resp_type = RESPType::SimpleString("PONG".to_string());
-                // writer.write_all(&resp_type.as_bytes()).await?;
+                debug!("Sending POING");
+                writer.write_all(&resp_type.as_bytes()).await?;
+                writer.flush().await?;
             }
             Set { key, value, flags } => {
                 let kv_cmd = KvStoreCmd::Set {
