@@ -117,7 +117,11 @@ async fn prepare_master_to_slave_chan() -> mpsc::Sender<MasterToSlaveCmd> {
                     let key = format!("{host}:{port}");
                     streams_map.insert(key, stream);
                 }
-                Set { key, value, flags } => {
+                Set {
+                    key,
+                    value,
+                    flags: _flags,
+                } => {
                     debug!("Sending to stream");
                     let msg = RESPType::Array(vec![
                         RESPType::BulkString("SET".to_string()),
@@ -127,7 +131,7 @@ async fn prepare_master_to_slave_chan() -> mpsc::Sender<MasterToSlaveCmd> {
                     for (_, v) in &mut streams_map {
                         debug!("Sending to stream asdfadf");
                         let _ = v.write_all(&msg.as_bytes()).await;
-                        v.flush().await;
+                        v.flush().await.unwrap();
                     }
                 }
             }

@@ -32,15 +32,17 @@ pub(crate) async fn prepare_conn_with_master(kv_chan: Sender<KvStoreCmd>) -> any
         let mut reader = BufReader::new(reader);
         handshake(&mut writer, &mut reader).await;
         receive_rdb_file(&mut reader).await;
+        let mut bytes_received = 0;
         loop {
             let resp_type = parse_request(&mut reader).await.unwrap();
             let client_cmd = ClientCmd::from_resp_type(&resp_type).unwrap();
             let slave_cmd = SlaveCmd::from_client_cmd(&client_cmd).unwrap();
             slave_cmd
-                .process_slave_cmd(&mut writer, &kv_chan)
+                .process_slave_cmd(&mut writer, &kv_chan, bytes_received)
                 .await
                 .unwrap();
             writer.flush().await.unwrap();
+            bytes_received += resp_type.as_bytes().len();
         }
     });
     Ok(())

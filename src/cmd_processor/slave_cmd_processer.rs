@@ -1,5 +1,4 @@
-use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
-use tracing::debug;
+use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf};
 
 use crate::{cmd_parser::slave_cmd::SlaveCmd, kvstore::KvChan, resp_type::RESPType, KvStoreCmd};
 use SlaveCmd::*;
@@ -9,6 +8,7 @@ impl SlaveCmd {
         &self,
         writer: &mut WriteHalf<'_>,
         kv_chan: &KvChan,
+        bytes_received: usize,
     ) -> anyhow::Result<()> {
         match self {
             Set { key, value, flags } => {
@@ -19,11 +19,11 @@ impl SlaveCmd {
                 };
                 kv_chan.send(kv_cmd).await?;
             }
-            ReplConf { key, value } => {
+            ReplConf { .. } => {
                 let resp_type = RESPType::Array(vec![
                     RESPType::BulkString("REPLCONF".to_string()),
                     RESPType::BulkString("ACK".to_string()),
-                    RESPType::BulkString("0".to_string()),
+                    RESPType::BulkString(format!("{}", bytes_received)),
                 ]);
                 writer.write_all(&resp_type.as_bytes()).await?;
             }

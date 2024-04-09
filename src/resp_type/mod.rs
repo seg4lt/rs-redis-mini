@@ -4,7 +4,7 @@ pub(crate) mod parser;
 
 use RESPType::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RESPType {
     Array(Vec<RESPType>),
     BulkString(String),

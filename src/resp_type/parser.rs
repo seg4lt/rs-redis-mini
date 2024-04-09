@@ -41,10 +41,23 @@ pub async fn parse_request<'a>(
         b'$' => read_bulk_string(reader).await?,
         b'+' => read_simple_string(reader).await?,
         b'\n' | b'\r' => RESPType::CustomNewLine,
+        b'`' => read_custom_command(reader).await?,
         _ => bail!("Unable to determine data type: {}", buf[0] as char),
     };
     debug!("Request RESPType - {:?}", request_resp_type);
     Ok(request_resp_type)
+}
+
+pub(crate) async fn read_custom_command<'a>(
+    reader: &'a mut Reader<'_>,
+) -> anyhow::Result<RESPType> {
+    let mut buf = String::new();
+    reader.read_line(&mut buf).await?;
+    let items = buf
+        .split(" ")
+        .map(|x| RESPType::BulkString(x.to_string()))
+        .collect::<Vec<RESPType>>();
+    Ok(RESPType::Array(items))
 }
 
 pub(crate) async fn read_simple_string<'a>(reader: &'a mut Reader<'_>) -> anyhow::Result<RESPType> {
