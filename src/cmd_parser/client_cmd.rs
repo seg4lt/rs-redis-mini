@@ -6,6 +6,7 @@ use crate::{fdbg, resp_type::RESPType};
 
 type R = anyhow::Result<ClientCmd>;
 
+#[derive(Debug)]
 pub enum ClientCmd {
     Ping,
     Echo(String),

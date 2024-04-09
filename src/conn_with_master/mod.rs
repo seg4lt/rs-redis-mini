@@ -4,18 +4,21 @@ use tokio::{
         tcp::{ReadHalf, WriteHalf},
         TcpStream,
     },
+    sync::mpsc::Sender,
 };
-use tracing::{debug, span, Level};
+use tracing::debug;
 
 use crate::{
     app_config::AppConfig,
+    cmd_parser::{client_cmd::ClientCmd, slave_cmd::SlaveCmd},
+    kvstore::KvStoreCmd,
     resp_type::{
         parser::{parse_rdb_file, parse_request},
         RESPType,
     },
 };
 
-pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
+pub(crate) async fn prepare_conn_with_master(kv_chan: Sender<KvStoreCmd>) -> anyhow::Result<()> {
     if AppConfig::is_master() {
         return Ok(());
     }
@@ -29,6 +32,12 @@ pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
         let mut reader = BufReader::new(reader);
         handshake(&mut writer, &mut reader).await;
         receive_rdb_file(&mut reader).await;
+        loop {
+            let resp_type = parse_request(&mut reader).await.unwrap();
+            let client_cmd = ClientCmd::from_resp_type(&resp_type).unwrap();
+            let slave_cmd = SlaveCmd::from_client_cmd(&client_cmd).unwrap();
+            slave_cmd.process_client_cmd(&kv_chan).await.unwrap();
+        }
     });
     Ok(())
 }
