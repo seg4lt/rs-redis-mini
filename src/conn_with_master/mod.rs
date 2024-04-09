@@ -11,14 +11,14 @@ use tracing::debug;
 use crate::{
     app_config::AppConfig,
     cmd_parser::{client_cmd::ClientCmd, slave_cmd::SlaveCmd},
-    kvstore::KvStoreCmd,
+    database::DatabaseEvent,
     resp_type::{
         parser::{parse_rdb_file, parse_request},
         RESPType,
     },
 };
 
-pub(crate) async fn prepare_conn_with_master(kv_chan: Sender<KvStoreCmd>) -> anyhow::Result<()> {
+pub(crate) async fn prepare_conn_with_master(kv_chan: Sender<DatabaseEvent>) -> anyhow::Result<()> {
     if AppConfig::is_master() {
         return Ok(());
     }

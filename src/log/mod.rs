@@ -6,7 +6,7 @@ pub fn setup_log() -> anyhow::Result<()> {
     let subscriber = tracing_subscriber::fmt()
         // Use a more compact, abbreviated log format
         .compact()
-        .without_time()
+        // .without_time()
         // Display source code file paths
         .with_file(true)
         // Display source code line numbers

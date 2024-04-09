@@ -1,14 +1,18 @@
+use std::time::Duration;
+
 use tokio::{
     io::AsyncWriteExt,
     net::tcp::WriteHalf,
-    select,
     sync::{mpsc::Sender, oneshot},
 };
 use tracing::debug;
 
 use crate::{
-    app_config::AppConfig, cmd_parser::client_cmd::ClientCmd, kvstore::KvChan, resp_type::RESPType,
-    KvStoreCmd, MasterToSlaveCmd, LINE_ENDING,
+    app_config::AppConfig,
+    cmd_parser::client_cmd::ClientCmd,
+    database::{DatabaseEvent, DatabaseEventListener},
+    resp_type::RESPType,
+    MasterToSlaveCmd, LINE_ENDING,
 };
 use ClientCmd::*;
 
@@ -16,7 +20,7 @@ impl ClientCmd {
     pub async fn process_client_cmd(
         &self,
         writer: &mut WriteHalf<'_>,
-        kv_chan: &KvChan,
+        kv_chan: &DatabaseEventListener,
         slaves_chan: &Sender<MasterToSlaveCmd>,
     ) -> anyhow::Result<()> {
         match self {
@@ -29,7 +33,7 @@ impl ClientCmd {
                 writer.write_all(&resp_type.as_bytes()).await?;
             }
             Set { key, value, flags } => {
-                let kv_cmd = KvStoreCmd::Set {
+                let kv_cmd = DatabaseEvent::Set {
                     key: key.clone(),
                     value: value.clone(),
                     flags: flags.clone(),
@@ -47,7 +51,7 @@ impl ClientCmd {
             }
             Get { key } => {
                 let (tx, rx) = oneshot::channel::<Option<String>>();
-                let kv_cmd = KvStoreCmd::Get {
+                let kv_cmd = DatabaseEvent::Get {
                     resp: tx,
                     key: key.to_owned(),
                 };
@@ -107,20 +111,23 @@ impl ClientCmd {
                     0 => {
                         let resp_type = RESPType::Integer(num_replicas as i64);
                         writer.write_all(&resp_type.as_bytes()).await?;
+                        return Ok(());
                     }
                     _ => {
                         let (tx, rx) = oneshot::channel::<bool>();
                         kv_chan
-                            .send(KvStoreCmd::WasLastCommandSet { resp: tx })
+                            .send(DatabaseEvent::WasLastCommandSet { resp: tx })
                             .await?;
                         let was_last_command_set = rx.await?;
                         match was_last_command_set {
                             false => {
                                 let resp_type = RESPType::Integer(num_replicas as i64);
                                 writer.write_all(&resp_type.as_bytes()).await?;
+                                return Ok(());
                             }
                             true => {
                                 let (tx, rx) = oneshot::channel::<usize>();
+                                debug!("Sending GETACK TO client");
                                 slaves_chan
                                     .send(MasterToSlaveCmd::GetAck {
                                         min_ack: *min_acks_wanted,
@@ -128,19 +135,42 @@ impl ClientCmd {
                                     })
                                     .await
                                     .unwrap();
-
-                                select! {
-                                     _ = tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms as u64)) => {
-                                            let resp_type = RESPType::Integer(0);
-                                            writer.write_all(&resp_type.as_bytes()).await?;
-                                     }
-                                     acks_received = rx => {
-                                         // This is not multi-threaded, so either we get 0 or whole acks
-                                         let acks_received = acks_received.unwrap();
-                                         let resp_type = RESPType::Integer(acks_received as i64);
-                                         writer.write_all(&resp_type.as_bytes()).await?;
-                                     }
+                                let timeout_ms = timeout_ms * 4;
+                                match tokio::time::timeout(
+                                    Duration::from_millis(timeout_ms as u64),
+                                    rx,
+                                )
+                                .await
+                                {
+                                    Ok(Ok(value)) => {
+                                        let acks_received = value;
+                                        let resp_type = RESPType::Integer(acks_received as i64);
+                                        let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
+                                        debug!("✅ What did I receive: {}", xx);
+                                        writer.write_all(&resp_type.as_bytes()).await?;
+                                        debug!("Done with writing");
+                                    }
+                                    _ => {
+                                        debug!("TIMEOUT or error")
+                                    }
                                 }
+
+                                // select! {
+                                //      _ = tokio::time::sleep(std::time::Duration::from_millis(timeout_ms as u64)) => {
+                                //             debug!("⏰ Timedout,  {:?}", Instant::now().duration_since(start));
+                                //             let resp_type = RESPType::Integer(0);
+                                //             writer.write_all(&resp_type.as_bytes()).await?;
+                                //      }
+                                //      acks_received = rx => {
+                                //          // This is not multi-threaded, so either we get 0 or whole acks
+                                //          let acks_received = acks_received.unwrap();
+                                //          let resp_type = RESPType::Integer(acks_received as i64);
+                                //          let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
+                                //          debug!("✅ What did I receive: {}", xx);
+                                //          writer.write_all(&resp_type.as_bytes()).await?;
+                                //          debug!("Done with writing")
+                                //      }
+                                // }
                             }
                         }
                     }

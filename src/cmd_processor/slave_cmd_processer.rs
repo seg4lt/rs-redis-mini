@@ -1,14 +1,18 @@
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf};
 use tracing::debug;
 
-use crate::{cmd_parser::slave_cmd::SlaveCmd, kvstore::KvChan, resp_type::RESPType, KvStoreCmd};
+use crate::{
+    cmd_parser::slave_cmd::SlaveCmd,
+    database::{DatabaseEvent, DatabaseEventListener},
+    resp_type::RESPType,
+};
 use SlaveCmd::*;
 
 impl SlaveCmd {
     pub async fn process_slave_cmd(
         &self,
         writer: &mut WriteHalf<'_>,
-        kv_chan: &KvChan,
+        kv_chan: &DatabaseEventListener,
         bytes_received: usize,
     ) -> anyhow::Result<()> {
         match self {
@@ -16,7 +20,7 @@ impl SlaveCmd {
                 // not need to process
             }
             Set { key, value, flags } => {
-                let kv_cmd = KvStoreCmd::Set {
+                let kv_cmd = DatabaseEvent::Set {
                     key: key.clone(),
                     value: value.clone(),
                     flags: flags.clone(),
@@ -24,7 +28,6 @@ impl SlaveCmd {
                 kv_chan.send(kv_cmd).await?;
             }
             ReplConf { .. } => {
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
                 let resp_type = RESPType::Array(vec![
                     RESPType::BulkString("REPLCONF".to_string()),
                     RESPType::BulkString("ACK".to_string()),

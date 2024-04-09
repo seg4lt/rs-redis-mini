@@ -18,15 +18,18 @@ type Reader<'a> = BufReader<ReadHalf<'a>>;
 pub async fn parse_request<'a>(
     reader: &'a mut BufReader<ReadHalf<'_>>,
 ) -> anyhow::Result<RESPType> {
+    debug!("Trying to read from client");
     let mut buf = [0; 1];
     let count = reader
         .read(&mut buf)
         .await
-        .context(fdbg!("Unable to read string from client"))?;
+        .context(fdbg!("Unable to read string from client"))
+        .unwrap_or(0);
     if count == 0 {
+        debug!("GOT EOF");
         return Ok(RESPType::EOF);
     }
-    // debug!("DataType identifying ASCII:({})", buf[0]);
+    debug!("DataType identifying ASCII:({})", buf[0]);
     let request_resp_type = match buf[0] {
         b'*' => {
             let count = read_count(reader).await?;
