@@ -29,6 +29,10 @@ pub enum ClientCmd {
         key: String,
         value: String,
     },
+    Wait {
+        num_replicas: usize,
+        timeout_ms: usize,
+    },
     CustomNewLine,
     ExitConn,
 }
@@ -60,9 +64,25 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "INFO" => parse_info_cmd(&items[1..]),
         "REPLCONF" => parse_replication_conf_cmd(&items[1..]),
         "PSYNC" => parse_psync_cmd(&items[1..]),
+        "WAIT" => parse_wait_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
 }
+
+fn parse_wait_cmd(items: &[RESPType]) -> R {
+    let Some(RESPType::BulkString(num_replicas)) = items.get(0) else {
+        bail!(fdbg!("WAIT command must have at least one key"));
+    };
+    let Some(RESPType::BulkString(value)) = items.get(1) else {
+        bail!(fdbg!("WAIT command must have at least one value"));
+    };
+    let num_replicas = num_replicas.parse::<usize>()?;
+    Ok(ClientCmd::Wait {
+        num_replicas,
+        timeout_ms: value.parse::<usize>()?,
+    })
+}
+
 fn parse_psync_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(key)) = items.get(0) else {
         bail!(fdbg!("PSYNC command must have at least one key"));

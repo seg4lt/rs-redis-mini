@@ -80,6 +80,13 @@ impl ClientCmd {
                 writer.flush().await?;
                 send_rds_file(writer).await?;
             }
+            Wait {
+                num_replicas: _num_replicas,
+                timeout_ms: _timeout_ms,
+            } => {
+                let resp_type = RESPType::Integer(0);
+                writer.write_all(&resp_type.as_bytes()).await?;
+            }
             CustomNewLine | ExitConn => {}
         };
         Ok(())
