@@ -1,6 +1,7 @@
 use tokio::{
     io::AsyncWriteExt,
     net::tcp::WriteHalf,
+    select,
     sync::{mpsc::Sender, oneshot},
 };
 use tracing::debug;
@@ -94,7 +95,7 @@ impl ClientCmd {
             }
             Wait {
                 num_replicas: min_acks_wanted,
-                timeout_ms: _timeout_ms,
+                timeout_ms,
             } => {
                 let (tx, rx) = oneshot::channel::<usize>();
                 slaves_chan
@@ -127,9 +128,19 @@ impl ClientCmd {
                                     })
                                     .await
                                     .unwrap();
-                                let acks_received = rx.await?;
-                                let resp_type = RESPType::Integer(acks_received as i64);
-                                writer.write_all(&resp_type.as_bytes()).await?;
+
+                                select! {
+                                     _ = tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms as u64)) => {
+                                            let resp_type = RESPType::Integer(0);
+                                            writer.write_all(&resp_type.as_bytes()).await?;
+                                     }
+                                     acks_received = rx => {
+                                         // This is not multi-threaded, so either we get 0 or whole acks
+                                         let acks_received = acks_received.unwrap();
+                                         let resp_type = RESPType::Integer(acks_received as i64);
+                                         writer.write_all(&resp_type.as_bytes()).await?;
+                                     }
+                                }
                             }
                         }
                     }
