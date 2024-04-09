@@ -6,6 +6,7 @@ use super::client_cmd::ClientCmd;
 
 #[derive(Debug)]
 pub enum SlaveCmd {
+    Ping,
     Set {
         key: String,
         value: String,
@@ -21,6 +22,7 @@ impl SlaveCmd {
     // Probably should refactor this to use a trait
     pub fn from_client_cmd(client_cmd: &ClientCmd) -> anyhow::Result<Self> {
         match client_cmd {
+            ClientCmd::Ping => Ok(SlaveCmd::Ping),
             ClientCmd::Set { key, value, flags } => Ok(SlaveCmd::Set {
                 key: key.clone(),
                 value: value.clone(),

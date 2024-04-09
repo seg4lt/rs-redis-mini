@@ -11,6 +11,10 @@ impl SlaveCmd {
         bytes_received: usize,
     ) -> anyhow::Result<()> {
         match self {
+            Ping => {
+                let resp_type = RESPType::SimpleString("PONG".to_string());
+                writer.write_all(&resp_type.as_bytes()).await?;
+            }
             Set { key, value, flags } => {
                 let kv_cmd = KvStoreCmd::Set {
                     key: key.clone(),

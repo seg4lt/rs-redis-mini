@@ -43,6 +43,7 @@ pub(crate) async fn prepare_conn_with_master(kv_chan: Sender<KvStoreCmd>) -> any
                 .unwrap();
             writer.flush().await.unwrap();
             bytes_received += resp_type.as_bytes().len();
+            debug!("Bytes received: {bytes_received}");
         }
     });
     Ok(())
