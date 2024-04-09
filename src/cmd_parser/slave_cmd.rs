@@ -30,7 +30,7 @@ impl SlaveCmd {
                 key: key.clone(),
                 value: value.clone(),
             }),
-            _ => bail!("Only SET command is supported for now"),
+            _ => bail!("Only SET command is supported for now = {:?}", client_cmd),
         }
     }
 }
