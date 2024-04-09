@@ -11,6 +11,10 @@ pub enum SlaveCmd {
         value: String,
         flags: HashMap<String, String>,
     },
+    ReplConf {
+        key: String,
+        value: String,
+    },
 }
 impl SlaveCmd {
     // Hack to convert ClientCmd to SlaveCmd
@@ -21,6 +25,10 @@ impl SlaveCmd {
                 key: key.clone(),
                 value: value.clone(),
                 flags: flags.clone(),
+            }),
+            ClientCmd::ReplConf { key, value } => Ok(SlaveCmd::ReplConf {
+                key: key.clone(),
+                value: value.clone(),
             }),
             _ => bail!("Only SET command is supported for now"),
         }

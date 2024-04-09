@@ -67,18 +67,9 @@ impl ClientCmd {
                 let info_string = RESPType::BulkString(info_vec.join(LINE_ENDING));
                 writer.write_all(&info_string.as_bytes()).await?;
             }
-            ReplConf { key, value: _value } => {
-                if key != "GETACK" {
-                    let resp_type = RESPType::SimpleString("OK".to_string());
-                    writer.write_all(&resp_type.as_bytes()).await?;
-                } else {
-                    let resp_type = RESPType::Array(vec![
-                        RESPType::BulkString("REPLCONF".to_string()),
-                        RESPType::BulkString("ACK".to_string()),
-                        RESPType::BulkString("0".to_string()),
-                    ]);
-                    writer.write_all(&resp_type.as_bytes()).await?;
-                }
+            ReplConf { .. } => {
+                let resp_type = RESPType::SimpleString("OK".to_string());
+                writer.write_all(&resp_type.as_bytes()).await?;
             }
             Psync { .. } => {
                 let replid = AppConfig::get_master_replid();
