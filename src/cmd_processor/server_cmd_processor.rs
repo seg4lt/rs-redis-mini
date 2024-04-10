@@ -1,27 +1,20 @@
 use std::time::Duration;
 
-use tokio::{
-    io::AsyncWriteExt,
-    net::tcp::WriteHalf,
-    sync::{mpsc::Sender, oneshot},
-};
+use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
 use tracing::debug;
 
 use crate::{
     app_config::AppConfig,
     cmd_parser::client_cmd::ClientCmd,
     database::{Database, DatabaseEvent},
+    replication::ReplicationEvent,
     resp_type::RESPType,
-    MasterToSlaveCmd, LINE_ENDING,
+    LINE_ENDING,
 };
 use ClientCmd::*;
 
 impl ClientCmd {
-    pub async fn process_client_cmd(
-        &self,
-        writer: &mut WriteHalf<'_>,
-        slaves_chan: &Sender<MasterToSlaveCmd>,
-    ) -> anyhow::Result<()> {
+    pub async fn process_client_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
         match self {
             Ping => {
                 let resp_type = RESPType::SimpleString("PONG".to_string());
@@ -40,13 +33,13 @@ impl ClientCmd {
                 Database::emit(kv_cmd).await?;
                 let resp_type = RESPType::SimpleString("OK".to_string());
                 writer.write_all(&resp_type.as_bytes()).await?;
-                slaves_chan
-                    .send(MasterToSlaveCmd::Set {
-                        key: key.to_string(),
-                        value: value.to_string(),
-                        flags: flags.clone(),
-                    })
-                    .await?;
+                ReplicationEvent::Set {
+                    key: key.to_string(),
+                    value: value.to_string(),
+                    flags: flags.clone(),
+                }
+                .emit()
+                .await?;
             }
             Get { key } => {
                 let (tx, rx) = oneshot::channel::<Option<String>>();
@@ -101,8 +94,8 @@ impl ClientCmd {
                 timeout_ms,
             } => {
                 let (tx, rx) = oneshot::channel::<usize>();
-                slaves_chan
-                    .send(MasterToSlaveCmd::GetNumOfReplicas { resp: tx })
+                ReplicationEvent::GetNumOfReplicas { resp: tx }
+                    .emit()
                     .await?;
                 let num_replicas = rx.await?;
 
@@ -125,13 +118,13 @@ impl ClientCmd {
                             true => {
                                 let (tx, rx) = oneshot::channel::<usize>();
                                 debug!("Sending GETACK TO client");
-                                slaves_chan
-                                    .send(MasterToSlaveCmd::GetAck {
-                                        min_ack: *min_acks_wanted,
-                                        resp: tx,
-                                    })
-                                    .await
-                                    .unwrap();
+                                ReplicationEvent::GetAck {
+                                    min_ack: *min_acks_wanted,
+                                    resp: tx,
+                                }
+                                .emit()
+                                .await
+                                .expect("Unable to send GETACK");
                                 let timeout_ms = timeout_ms * 4;
                                 match tokio::time::timeout(
                                     Duration::from_millis(timeout_ms as u64),
