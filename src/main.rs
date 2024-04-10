@@ -3,7 +3,6 @@
 use std::net::SocketAddr;
 
 use anyhow::Context;
-use database::DatabaseEventListener;
 use slave_communication::{setup_master_to_slave_communication, MasterToSlaveCmd};
 use tokio::{
     io::{AsyncWriteExt, BufReader},
@@ -34,20 +33,19 @@ pub const NEW_LINE: u8 = b'\n';
 async fn main() -> anyhow::Result<()> {
     setup_log()?;
     debug!("🚀🚀🚀 Logs from your program will appear here! 🚀🚀🚀");
-    let db_event_listener = Database::new();
+    Database::new();
     let port = AppConfig::get_port();
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
         .await
         .unwrap();
     let slaves_chan = setup_master_to_slave_communication().await;
-    prepare_conn_with_master(db_event_listener.clone()).await?;
+    prepare_conn_with_master().await?;
     loop {
         let (stream, addr) = listener.accept().await?;
         debug!("Got a request from: {:?}", addr);
-        let kv_chan = db_event_listener.clone();
         let slaves_chan = slaves_chan.clone();
         tokio::spawn(async move {
-            handle_connection(stream, addr, kv_chan, slaves_chan)
+            handle_connection(stream, addr, slaves_chan)
                 .await
                 .expect("Connection was disconnected with an error")
         });
@@ -57,7 +55,6 @@ async fn main() -> anyhow::Result<()> {
 async fn handle_connection(
     mut stream: TcpStream,
     addr: SocketAddr,
-    kv_chan: DatabaseEventListener,
     slaves_chan: Sender<MasterToSlaveCmd>,
 ) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.split();
@@ -66,7 +63,7 @@ async fn handle_connection(
         let resp_type = parse_request(&mut reader).await?;
         let client_cmd = ClientCmd::from_resp_type(&resp_type)?;
         client_cmd
-            .process_client_cmd(&mut writer, &kv_chan, &slaves_chan)
+            .process_client_cmd(&mut writer, &slaves_chan)
             .await
             .context(fdbg!("Unable to write to client stream"))?;
         if let ClientCmd::Psync { .. } = client_cmd {

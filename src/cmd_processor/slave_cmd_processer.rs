@@ -3,7 +3,7 @@ use tracing::debug;
 
 use crate::{
     cmd_parser::slave_cmd::SlaveCmd,
-    database::{DatabaseEvent, DatabaseEventListener},
+    database::{Database, DatabaseEvent},
     resp_type::RESPType,
 };
 use SlaveCmd::*;
@@ -12,7 +12,6 @@ impl SlaveCmd {
     pub async fn process_slave_cmd(
         &self,
         writer: &mut WriteHalf<'_>,
-        kv_chan: &DatabaseEventListener,
         bytes_received: usize,
     ) -> anyhow::Result<()> {
         match self {
@@ -25,7 +24,7 @@ impl SlaveCmd {
                     value: value.clone(),
                     flags: flags.clone(),
                 };
-                kv_chan.send(kv_cmd).await?;
+                Database::emit(kv_cmd).await?;
             }
             ReplConf { .. } => {
                 let resp_type = RESPType::Array(vec![

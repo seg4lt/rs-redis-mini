@@ -10,7 +10,7 @@ use tracing::debug;
 use crate::{
     app_config::AppConfig,
     cmd_parser::client_cmd::ClientCmd,
-    database::{DatabaseEvent, DatabaseEventListener},
+    database::{Database, DatabaseEvent},
     resp_type::RESPType,
     MasterToSlaveCmd, LINE_ENDING,
 };
@@ -20,7 +20,6 @@ impl ClientCmd {
     pub async fn process_client_cmd(
         &self,
         writer: &mut WriteHalf<'_>,
-        kv_chan: &DatabaseEventListener,
         slaves_chan: &Sender<MasterToSlaveCmd>,
     ) -> anyhow::Result<()> {
         match self {
@@ -38,7 +37,7 @@ impl ClientCmd {
                     value: value.clone(),
                     flags: flags.clone(),
                 };
-                kv_chan.send(kv_cmd).await?;
+                Database::emit(kv_cmd).await?;
                 let resp_type = RESPType::SimpleString("OK".to_string());
                 writer.write_all(&resp_type.as_bytes()).await?;
                 slaves_chan
@@ -55,7 +54,7 @@ impl ClientCmd {
                     resp: tx,
                     key: key.to_owned(),
                 };
-                kv_chan.send(kv_cmd).await?;
+                Database::emit(kv_cmd).await?;
                 match rx.await? {
                     None => {
                         let resp_type = RESPType::NullBulkString;
@@ -115,9 +114,7 @@ impl ClientCmd {
                     }
                     _ => {
                         let (tx, rx) = oneshot::channel::<bool>();
-                        kv_chan
-                            .send(DatabaseEvent::WasLastCommandSet { resp: tx })
-                            .await?;
+                        Database::emit(DatabaseEvent::WasLastCommandSet { resp: tx }).await?;
                         let was_last_command_set = rx.await?;
                         match was_last_command_set {
                             false => {

@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -9,6 +10,10 @@ use tokio::sync::{
 };
 use tracing::info;
 use DatabaseEvent::*;
+
+pub type DatabaseEventEmitter = mpsc::Sender<DatabaseEvent>;
+// Probably shouldn't have this as static, but this makes program bit easier to write
+static LISTENER: OnceLock<DatabaseEventEmitter> = OnceLock::new();
 
 #[derive(Debug)]
 pub enum DatabaseEvent {
@@ -25,19 +30,18 @@ pub enum DatabaseEvent {
         resp: oneshot::Sender<bool>,
     },
 }
-
 pub struct DatabaseValue {
     value: String,
     exp_time: Option<Instant>,
 }
-
-pub type DatabaseEventListener = mpsc::Sender<DatabaseEvent>;
 pub struct Database {
     db: HashMap<String, DatabaseValue>,
 }
+
 impl Database {
-    pub fn new() -> DatabaseEventListener {
+    pub fn new() -> DatabaseEventEmitter {
         let (db_event_listener, mut db_event_receiver) = channel::<DatabaseEvent>(100);
+        LISTENER.get_or_init(|| db_event_listener.clone());
         tokio::spawn(async move {
             let mut db = Database { db: HashMap::new() };
             let mut last_command_was_set = false;
@@ -63,6 +67,13 @@ impl Database {
             }
         });
         db_event_listener
+    }
+    pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
+        let Some(emitter) = LISTENER.get() else {
+            panic!("DatabaseEventEmitter not initialized");
+        };
+        emitter.send(event).await?;
+        Ok(())
     }
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
         info!("Setting key: {} with value: {}", key, value);

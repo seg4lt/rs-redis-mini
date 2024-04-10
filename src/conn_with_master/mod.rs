@@ -4,21 +4,19 @@ use tokio::{
         tcp::{ReadHalf, WriteHalf},
         TcpStream,
     },
-    sync::mpsc::Sender,
 };
 use tracing::debug;
 
 use crate::{
     app_config::AppConfig,
     cmd_parser::{client_cmd::ClientCmd, slave_cmd::SlaveCmd},
-    database::DatabaseEvent,
     resp_type::{
         parser::{parse_rdb_file, parse_request},
         RESPType,
     },
 };
 
-pub(crate) async fn prepare_conn_with_master(kv_chan: Sender<DatabaseEvent>) -> anyhow::Result<()> {
+pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
     if AppConfig::is_master() {
         return Ok(());
     }
@@ -38,7 +36,7 @@ pub(crate) async fn prepare_conn_with_master(kv_chan: Sender<DatabaseEvent>) -> 
             let client_cmd = ClientCmd::from_resp_type(&resp_type).unwrap();
             let slave_cmd = SlaveCmd::from_client_cmd(&client_cmd).unwrap();
             slave_cmd
-                .process_slave_cmd(&mut writer, &kv_chan, bytes_received)
+                .process_slave_cmd(&mut writer, bytes_received)
                 .await
                 .unwrap();
             writer.flush().await.unwrap();
