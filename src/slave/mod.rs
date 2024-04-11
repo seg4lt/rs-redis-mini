@@ -16,35 +16,38 @@ use crate::{
     },
 };
 
-pub(crate) async fn prepare_conn_with_master() -> anyhow::Result<()> {
-    if AppConfig::is_master() {
-        return Ok(());
-    }
-    debug!("Starting connection with master");
-    let Some((host, port)) = AppConfig::get_replicaof() else {
-        panic!("Replica should have --replicaof args");
-    };
-    let mut stream = TcpStream::connect(format!("{host}:{port}")).await?;
-    tokio::spawn(async move {
-        let (reader, mut writer) = stream.split();
-        let mut reader = BufReader::new(reader);
-        handshake(&mut writer, &mut reader).await;
-        receive_rdb_file(&mut reader).await;
-        let mut bytes_received = 0;
-        loop {
-            let resp_type = parse_request(&mut reader).await.unwrap();
-            let client_cmd = ClientCmd::from_resp_type(&resp_type).unwrap();
-            let slave_cmd = SlaveCmd::from_client_cmd(&client_cmd).unwrap();
-            slave_cmd
-                .process_slave_cmd(&mut writer, bytes_received)
-                .await
-                .unwrap();
-            writer.flush().await.unwrap();
-            bytes_received += resp_type.as_bytes().len();
-            debug!("Bytes received: {bytes_received}");
+pub struct Slave {}
+impl Slave {
+    pub async fn setup() -> anyhow::Result<()> {
+        if AppConfig::is_master() {
+            return Ok(());
         }
-    });
-    Ok(())
+        debug!("Starting connection with master");
+        let Some((host, port)) = AppConfig::get_replicaof() else {
+            panic!("Replica should have --replicaof args");
+        };
+        let mut stream = TcpStream::connect(format!("{host}:{port}")).await?;
+        tokio::spawn(async move {
+            let (reader, mut writer) = stream.split();
+            let mut reader = BufReader::new(reader);
+            handshake(&mut writer, &mut reader).await;
+            receive_rdb_file(&mut reader).await;
+            let mut bytes_received = 0;
+            loop {
+                let resp_type = parse_request(&mut reader).await.unwrap();
+                let client_cmd = ClientCmd::from_resp_type(&resp_type).unwrap();
+                let slave_cmd = SlaveCmd::from_client_cmd(&client_cmd).unwrap();
+                slave_cmd
+                    .process_slave_cmd(&mut writer, bytes_received)
+                    .await
+                    .unwrap();
+                writer.flush().await.unwrap();
+                bytes_received += resp_type.as_bytes().len();
+                debug!("Bytes received: {bytes_received}");
+            }
+        });
+        Ok(())
+    }
 }
 
 async fn receive_rdb_file(reader: &mut BufReader<ReadHalf<'_>>) {
