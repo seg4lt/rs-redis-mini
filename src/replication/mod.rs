@@ -9,7 +9,7 @@ use tokio::{
 };
 use tracing::debug;
 
-use crate::resp_type::{parser::parse_request, RESPType};
+use crate::resp_type::RESPType;
 
 static EMITTER: OnceLock<ReplicationEventEmitter> = OnceLock::new();
 
@@ -90,7 +90,7 @@ impl ReplicationEvent {
                             let _guard = span.enter();
                             debug!("Creating bufferred reader");
                             let mut reader = BufReader::new(reader);
-                            let resp_type = parse_request(&mut reader).await.unwrap();
+                            let resp_type = RESPType::parse(&mut reader).await.unwrap();
                             debug!("RESP from slave - {:?}", resp_type);
                             acks_received += 1;
                             debug!(

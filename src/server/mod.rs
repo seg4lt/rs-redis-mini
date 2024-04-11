@@ -9,7 +9,7 @@ use tracing::debug;
 
 use crate::{
     app_config::AppConfig, cmd_parser::client_cmd::ClientCmd, fdbg, replication::ReplicationEvent,
-    resp_type::parser::parse_request,
+    resp_type::RESPType,
 };
 
 pub struct Server {}
@@ -33,7 +33,7 @@ impl Server {
         let (reader, mut writer) = stream.split();
         let mut reader = BufReader::new(reader);
         loop {
-            let resp_type = parse_request(&mut reader).await?;
+            let resp_type = RESPType::parse(&mut reader).await?;
             let client_cmd = ClientCmd::from_resp_type(&resp_type)?;
             client_cmd
                 .process_client_cmd(&mut writer)

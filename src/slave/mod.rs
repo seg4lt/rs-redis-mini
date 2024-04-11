@@ -10,10 +10,7 @@ use tracing::debug;
 use crate::{
     app_config::AppConfig,
     cmd_parser::{client_cmd::ClientCmd, slave_cmd::SlaveCmd},
-    resp_type::{
-        parser::{parse_rdb_file, parse_request},
-        RESPType,
-    },
+    resp_type::RESPType,
 };
 
 pub struct Slave {}
@@ -34,7 +31,7 @@ impl Slave {
             receive_rdb_file(&mut reader).await;
             let mut bytes_received = 0;
             loop {
-                let resp_type = parse_request(&mut reader).await.unwrap();
+                let resp_type = RESPType::parse(&mut reader).await.unwrap();
                 let client_cmd = ClientCmd::from_resp_type(&resp_type).unwrap();
                 let slave_cmd = SlaveCmd::from_client_cmd(&client_cmd).unwrap();
                 slave_cmd
@@ -51,7 +48,7 @@ impl Slave {
 }
 
 async fn receive_rdb_file(reader: &mut BufReader<ReadHalf<'_>>) {
-    parse_rdb_file(reader)
+    RESPType::parse_rdb_file(reader)
         .await
         .expect("Should be able to parse RDB file");
 }
@@ -64,7 +61,7 @@ async fn handshake<'a>(writer: &mut WriteHalf<'_>, reader: &mut BufReader<ReadHa
         .await
         .expect("Should be able to write PING");
     writer.flush().await.expect("Should be able to flush PING");
-    let _response = parse_request(reader)
+    let _response = RESPType::parse(reader)
         .await
         .expect("Should be able to parse PONG");
     // REPL CONF
@@ -82,7 +79,7 @@ async fn handshake<'a>(writer: &mut WriteHalf<'_>, reader: &mut BufReader<ReadHa
         .flush()
         .await
         .expect("Should be able to flush replconf listening-port");
-    let _response = parse_request(reader)
+    let _response = RESPType::parse(reader)
         .await
         .expect("Should be able to parse OK");
 
@@ -100,7 +97,7 @@ async fn handshake<'a>(writer: &mut WriteHalf<'_>, reader: &mut BufReader<ReadHa
         .flush()
         .await
         .expect("Should be able to flush replconf capa psync2");
-    let _response = parse_request(reader)
+    let _response = RESPType::parse(reader)
         .await
         .expect("Should be able to parse OK");
 
@@ -118,7 +115,7 @@ async fn handshake<'a>(writer: &mut WriteHalf<'_>, reader: &mut BufReader<ReadHa
         .flush()
         .await
         .expect("Should be able to flush psync ? -1");
-    let _response = parse_request(reader)
+    let _response = RESPType::parse(reader)
         .await
         .expect("Should be able to parse FULLRESYNC");
 }
