@@ -4,10 +4,10 @@ use anyhow::bail;
 
 use crate::{fdbg, resp_type::RESPType};
 
-type R = anyhow::Result<ClientCmd>;
+type R = anyhow::Result<ServerCommand>;
 
 #[derive(Debug)]
-pub enum ClientCmd {
+pub enum ServerCommand {
     Ping,
     Echo(String),
     Get {
@@ -37,12 +37,12 @@ pub enum ClientCmd {
     ExitConn,
 }
 
-impl ClientCmd {
-    pub fn from_resp_type(resp_type: &RESPType) -> anyhow::Result<Self> {
+impl ServerCommand {
+    pub fn from(resp_type: &RESPType) -> anyhow::Result<Self> {
         match resp_type {
             RESPType::Array(items) => parse_client_cmd(&items),
-            RESPType::CustomNewLine => Ok(ClientCmd::CustomNewLine),
-            RESPType::EOF => Ok(ClientCmd::ExitConn),
+            RESPType::CustomNewLine => Ok(ServerCommand::CustomNewLine),
+            RESPType::EOF => Ok(ServerCommand::ExitConn),
             _ => bail!("Client command must be of type array"),
         }
     }
@@ -57,7 +57,7 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
     };
     let cmd = cmd.to_uppercase();
     match cmd.as_str() {
-        "PING" => Ok(ClientCmd::Ping),
+        "PING" => Ok(ServerCommand::Ping),
         "ECHO" => parse_echo_cmd(&items[1..]),
         "SET" => parse_set_cmd(&items[1..]),
         "GET" => parse_get_cmd(&items[1..]),
@@ -77,7 +77,7 @@ fn parse_wait_cmd(items: &[RESPType]) -> R {
         bail!(fdbg!("WAIT command must have at least one value"));
     };
     let num_replicas = num_replicas.parse::<usize>()?;
-    Ok(ClientCmd::Wait {
+    Ok(ServerCommand::Wait {
         num_replicas,
         timeout_ms: value.parse::<usize>()?,
     })
@@ -90,7 +90,7 @@ fn parse_psync_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(value)) = items.get(1) else {
         bail!(fdbg!("PSYNC command must have at least one value"));
     };
-    Ok(ClientCmd::Psync {
+    Ok(ServerCommand::Psync {
         key: key.to_string(),
         value: value.to_string(),
     })
@@ -102,7 +102,7 @@ fn parse_replication_conf_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(value)) = items.get(1) else {
         bail!(fdbg!("REPLCONF command must have at least one value"));
     };
-    Ok(ClientCmd::ReplConf {
+    Ok(ServerCommand::ReplConf {
         key: key.to_string(),
         value: value.to_string(),
     })
@@ -112,7 +112,7 @@ fn parse_info_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(key)) = items.get(0) else {
         bail!(fdbg!("INFO command must have at least one key"));
     };
-    Ok(ClientCmd::Info {
+    Ok(ServerCommand::Info {
         key: key.to_string(),
     })
 }
@@ -121,7 +121,7 @@ fn parse_get_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(key)) = items.get(0) else {
         bail!(fdbg!("GEt command must have at least key"));
     };
-    Ok(ClientCmd::Get {
+    Ok(ServerCommand::Get {
         key: key.to_owned(),
     })
 }
@@ -153,7 +153,7 @@ fn parse_set_cmd(items: &[RESPType]) -> R {
             _ => {}
         }
     }
-    Ok(ClientCmd::Set {
+    Ok(ServerCommand::Set {
         key: key.to_owned(),
         value: value.to_owned(),
         flags,
@@ -164,5 +164,5 @@ fn parse_echo_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(value)) = items.get(0) else {
         bail!(fdbg!("ECHO command must have at least one argument"));
     };
-    Ok(ClientCmd::Echo(value.to_owned()))
+    Ok(ServerCommand::Echo(value.to_owned()))
 }

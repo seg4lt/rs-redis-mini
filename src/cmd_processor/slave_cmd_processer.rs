@@ -2,13 +2,13 @@ use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf};
 use tracing::debug;
 
 use crate::{
-    cmd_parser::slave_cmd::SlaveCmd,
+    cmd_parser::slave_command::SlaveCommand,
     database::{Database, DatabaseEvent},
     resp_type::RESPType,
 };
-use SlaveCmd::*;
+use SlaveCommand::*;
 
-impl SlaveCmd {
+impl SlaveCommand {
     pub async fn process_slave_cmd(
         &self,
         writer: &mut WriteHalf<'_>,

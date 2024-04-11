@@ -8,8 +8,8 @@ use tokio::{
 use tracing::debug;
 
 use crate::{
-    app_config::AppConfig, cmd_parser::client_cmd::ClientCmd, fdbg, replication::ReplicationEvent,
-    resp_type::RESPType,
+    app_config::AppConfig, cmd_parser::server_command::ServerCommand, fdbg,
+    replication::ReplicationEvent, resp_type::RESPType,
 };
 
 pub struct Server {}
@@ -34,30 +34,27 @@ impl Server {
         let mut reader = BufReader::new(reader);
         loop {
             let resp_type = RESPType::parse(&mut reader).await?;
-            let client_cmd = ClientCmd::from_resp_type(&resp_type)?;
+            let client_cmd = ServerCommand::from(&resp_type)?;
             client_cmd
                 .process_client_cmd(&mut writer)
                 .await
                 .context(fdbg!("Unable to write to client stream"))?;
-            if let ClientCmd::Psync { .. } = client_cmd {
-                writer.flush().await?;
-                ReplicationEvent::SaveStream {
-                    host: addr.ip().to_string(),
-                    port: addr.port(),
-                    stream,
-                }
-                .emit()
-                .await?;
-                // Doing return here as we are not closing the connection but rather saving it for replication
-                return Ok(());
-            };
-            if let ClientCmd::ExitConn = client_cmd {
-                writer.flush().await?;
-                break;
-            }
             writer.flush().await?;
+            match client_cmd {
+                ServerCommand::Psync { .. } => {
+                    let (host, port) = (addr.ip().to_string(), addr.port());
+                    ReplicationEvent::SaveStream { host, port, stream }
+                        .emit()
+                        .await?;
+                    break;
+                }
+                ServerCommand::ExitConn => {
+                    debug!("Connection closed successfully!");
+                    break;
+                }
+                _ => continue,
+            }
         }
-        debug!("Connection closed successfully!");
         Ok(())
     }
 }

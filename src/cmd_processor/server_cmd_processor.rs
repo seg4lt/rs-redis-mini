@@ -5,15 +5,15 @@ use tracing::debug;
 
 use crate::{
     app_config::AppConfig,
-    cmd_parser::client_cmd::ClientCmd,
+    cmd_parser::server_command::ServerCommand,
     database::{Database, DatabaseEvent},
     replication::ReplicationEvent,
     resp_type::RESPType,
     LINE_ENDING,
 };
-use ClientCmd::*;
+use ServerCommand::*;
 
-impl ClientCmd {
+impl ServerCommand {
     pub async fn process_client_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
         match self {
             Ping => {

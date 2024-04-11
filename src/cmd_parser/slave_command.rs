@@ -2,10 +2,11 @@ use std::collections::HashMap;
 
 use anyhow::bail;
 
-use super::client_cmd::ClientCmd;
+use super::server_command::ServerCommand;
 
+/// These are commands that are sent by the master to the slave
 #[derive(Debug)]
-pub enum SlaveCmd {
+pub enum SlaveCommand {
     Ping,
     Set {
         key: String,
@@ -17,18 +18,18 @@ pub enum SlaveCmd {
         value: String,
     },
 }
-impl SlaveCmd {
-    // Hack to convert ClientCmd to SlaveCmd
-    // Probably should refactor this to use a trait
-    pub fn from_client_cmd(client_cmd: &ClientCmd) -> anyhow::Result<Self> {
+impl SlaveCommand {
+    // Need to find a better way later
+    // Hack for now, because RESPType can be converted to ServerCommand
+    pub fn from(client_cmd: &ServerCommand) -> anyhow::Result<Self> {
         match client_cmd {
-            ClientCmd::Ping => Ok(SlaveCmd::Ping),
-            ClientCmd::Set { key, value, flags } => Ok(SlaveCmd::Set {
+            ServerCommand::Ping => Ok(SlaveCommand::Ping),
+            ServerCommand::Set { key, value, flags } => Ok(SlaveCommand::Set {
                 key: key.clone(),
                 value: value.clone(),
                 flags: flags.clone(),
             }),
-            ClientCmd::ReplConf { key, value } => Ok(SlaveCmd::ReplConf {
+            ServerCommand::ReplConf { key, value } => Ok(SlaveCommand::ReplConf {
                 key: key.clone(),
                 value: value.clone(),
             }),

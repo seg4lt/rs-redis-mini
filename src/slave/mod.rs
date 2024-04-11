@@ -9,7 +9,7 @@ use tracing::debug;
 
 use crate::{
     app_config::AppConfig,
-    cmd_parser::{client_cmd::ClientCmd, slave_cmd::SlaveCmd},
+    cmd_parser::{server_command::ServerCommand, slave_command::SlaveCommand},
     resp_type::RESPType,
 };
 
@@ -32,8 +32,8 @@ impl Slave {
             let mut bytes_received = 0;
             loop {
                 let resp_type = RESPType::parse(&mut reader).await.unwrap();
-                let client_cmd = ClientCmd::from_resp_type(&resp_type).unwrap();
-                let slave_cmd = SlaveCmd::from_client_cmd(&client_cmd).unwrap();
+                let client_cmd = ServerCommand::from(&resp_type).unwrap();
+                let slave_cmd = SlaveCommand::from(&client_cmd).unwrap();
                 slave_cmd
                     .process_slave_cmd(&mut writer, bytes_received)
                     .await
