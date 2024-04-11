@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use anyhow::bail;
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
 use tracing::debug;
 
@@ -91,6 +92,29 @@ impl ServerCommand {
                 send_rds_file(writer).await?;
             }
             Wait { .. } => self.process_wait_cmd(writer).await?,
+            Config { cmd, key } => {
+                let cmd = cmd.to_lowercase();
+                if cmd != "get" {
+                    bail!("Only GET command is supported for CONFIG");
+                }
+                match key.as_str() {
+                    "dir" => {
+                        let resp_type = RESPType::Array(vec![
+                            RESPType::BulkString("dir".to_string()),
+                            RESPType::BulkString(AppConfig::get_rds_dir().to_string()),
+                        ]);
+                        writer.write_all(&resp_type.as_bytes()).await?;
+                    }
+                    "dbfilename" => {
+                        let resp_type = RESPType::Array(vec![
+                            RESPType::BulkString("dbfilename".to_string()),
+                            RESPType::BulkString(AppConfig::get_rds_file_name().to_string()),
+                        ]);
+                        writer.write_all(&resp_type.as_bytes()).await?;
+                    }
+                    _ => bail!("CONFIG key not supported yet"),
+                }
+            }
             CustomNewLine | ExitConn => {}
         };
         Ok(())
@@ -102,7 +126,7 @@ impl ServerCommand {
             timeout_ms,
         } = self
         else {
-            anyhow::bail!("Not a wait cmd");
+            bail!("Not a wait cmd");
         };
         let (replication_event_resp_emitter, replication_event_resp_listener) =
             oneshot::channel::<usize>();
@@ -153,11 +177,12 @@ impl ServerCommand {
                 let resp_type = RESPType::Integer(acks_received as i64);
                 let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
                 debug!("✅ What did I receive: {}", xx);
-                let response = writer.write_all(&resp_type.as_bytes()).await;
-                debug!("Done with writing. Response - {:?}", response);
+                writer.write_all(&resp_type.as_bytes()).await?;
             }
             _ => {
-                debug!("TIMEOUT or error")
+                debug!("⏰ TIMEOUT or error");
+                let resp_type = RESPType::Integer(0);
+                writer.write_all(&resp_type.as_bytes()).await?;
             }
         };
         Ok(())

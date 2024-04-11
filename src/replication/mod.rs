@@ -3,10 +3,7 @@ use std::sync::OnceLock;
 
 use tokio::{net::TcpStream, sync::oneshot};
 
-use tokio::{
-    io::{AsyncWriteExt, BufReader},
-    sync::mpsc,
-};
+use tokio::{io::AsyncWriteExt, sync::mpsc};
 use tracing::debug;
 
 use crate::resp_type::RESPType;
@@ -83,23 +80,23 @@ impl ReplicationEvent {
                             RESPType::BulkString("*".to_string()),
                         ]);
                         for (_, streams) in &mut streams_map {
-                            let (reader, mut writer) = streams.split();
+                            let (_reader, mut writer) = streams.split();
                             debug!("Sending GET ACK TO slave");
                             let _ = writer.write_all(&req.as_bytes()).await;
                             writer.flush().await.unwrap();
                             debug!("Writing to one slave");
-                            let span =
-                                tracing::span!(tracing::Level::DEBUG, "READING ACK FROM CLIENT");
-                            let _guard = span.enter();
+                            // let span =
+                            //     tracing::span!(tracing::Level::DEBUG, "READING ACK FROM CLIENT");
+                            // let _guard = span.enter();
                             // debug!("Creating bufferred reader");
                             // let mut reader = BufReader::new(reader);
                             // let resp_type = RESPType::parse(&mut reader).await.unwrap();
                             // debug!("RESP from slave - {:?}", resp_type);
                             acks_received += 1;
-                            debug!(
-                                "Acks received {:?} -- min_acks -- {}",
-                                acks_received, min_ack
-                            );
+                            // debug!(
+                            //     "Acks received {:?} -- min_acks -- {}",
+                            //     acks_received, min_ack
+                            // );
                             if acks_received >= min_ack {
                                 break;
                             }

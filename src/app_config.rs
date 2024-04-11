@@ -13,8 +13,28 @@ pub enum AppConfig {
     ReplicaOf(String, String),
     MasterReplId(String),
     MasterReplOffset(u128),
+    RDSDir(String),
+    RDSFileName(String),
 }
 impl AppConfig {
+    pub(crate) fn get_rds_dir() -> String {
+        let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
+        args.get("--dir")
+            .map(|v| match v {
+                AppConfig::RDSDir(dir) => dir.clone(),
+                _ => "NOTHING_DIR".to_string(),
+            })
+            .unwrap_or("NOTHING_DIR".to_string())
+    }
+    pub(crate) fn get_rds_file_name() -> String {
+        let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
+        args.get("--dbfilename")
+            .map(|v| match v {
+                AppConfig::RDSFileName(file_name) => file_name.clone(),
+                _ => "NOTHING_FILE_NAME".to_string(),
+            })
+            .unwrap_or("NOTHING_FILE_NAME".to_string())
+    }
     pub(crate) fn get_port() -> u16 {
         let args = APP_CONFIGS.get_or_init(|| Self::init().unwrap());
         args.get("--port")
@@ -77,6 +97,20 @@ impl AppConfig {
                         None => Err(anyhow!("replicaof port number not provided"))?,
                     };
                     AppConfig::ReplicaOf(host, port)
+                }
+                "--dir" => {
+                    let dir_name = match args.next() {
+                        Some(dir_name) => dir_name,
+                        None => Err(anyhow!("dir_name is not provided"))?,
+                    };
+                    AppConfig::RDSDir(dir_name)
+                }
+                "--dbfilename" => {
+                    let db_file_name = match args.next() {
+                        Some(db_file_name) => db_file_name,
+                        None => Err(anyhow!("dir_name is not provided"))?,
+                    };
+                    AppConfig::RDSFileName(db_file_name)
                 }
                 _ => Err(anyhow!("Unknown argument"))?,
             };

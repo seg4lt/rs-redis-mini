@@ -33,6 +33,10 @@ pub enum ServerCommand {
         ack_wanted: usize,
         timeout_ms: usize,
     },
+    Config {
+        cmd: String,
+        key: String,
+    },
     CustomNewLine,
     ExitConn,
 }
@@ -65,8 +69,22 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "REPLCONF" => parse_replication_conf_cmd(&items[1..]),
         "PSYNC" => parse_psync_cmd(&items[1..]),
         "WAIT" => parse_wait_cmd(&items[1..]),
+        "CONFIG" => parse_config_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
+}
+
+fn parse_config_cmd(items: &[RESPType]) -> R {
+    let Some(RESPType::BulkString(cmd)) = items.get(0) else {
+        bail!(fdbg!("CONFIG command must have associated command"));
+    };
+    let Some(RESPType::BulkString(key)) = items.get(1) else {
+        bail!(fdbg!("CONFIG command must have at key"));
+    };
+    Ok(ServerCommand::Config {
+        cmd: cmd.to_string(),
+        key: key.to_string(),
+    })
 }
 
 fn parse_wait_cmd(items: &[RESPType]) -> R {
