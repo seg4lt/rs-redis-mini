@@ -42,13 +42,14 @@ impl ServerCommand {
                 .await?;
             }
             Get { key } => {
-                let (tx, rx) = oneshot::channel::<Option<String>>();
+                let (replication_event_emitter, db_event_resp_listener) =
+                    oneshot::channel::<Option<String>>();
                 let kv_cmd = DatabaseEvent::Get {
-                    resp: tx,
+                    resp: replication_event_emitter,
                     key: key.to_owned(),
                 };
                 Database::emit(kv_cmd).await?;
-                match rx.await? {
+                match db_event_resp_listener.await? {
                     None => {
                         let resp_type = RESPType::NullBulkString;
                         writer.write_all(&resp_type.as_bytes()).await?;
@@ -89,68 +90,75 @@ impl ServerCommand {
                 writer.flush().await?;
                 send_rds_file(writer).await?;
             }
-            Wait {
-                num_replicas: min_acks_wanted,
-                timeout_ms,
-            } => {
-                let (tx, rx) = oneshot::channel::<usize>();
-                ReplicationEvent::GetNumOfReplicas { resp: tx }
-                    .emit()
-                    .await?;
-                let num_replicas = rx.await?;
-
-                match num_replicas {
-                    0 => {
-                        let resp_type = RESPType::Integer(num_replicas as i64);
-                        writer.write_all(&resp_type.as_bytes()).await?;
-                        return Ok(());
-                    }
-                    _ => {
-                        let (tx, rx) = oneshot::channel::<bool>();
-                        Database::emit(DatabaseEvent::WasLastCommandSet { resp: tx }).await?;
-                        let was_last_command_set = rx.await?;
-                        match was_last_command_set {
-                            false => {
-                                let resp_type = RESPType::Integer(num_replicas as i64);
-                                writer.write_all(&resp_type.as_bytes()).await?;
-                                return Ok(());
-                            }
-                            true => {
-                                let (tx, rx) = oneshot::channel::<usize>();
-                                debug!("(inside of wait): Emitting ReplicationEvent::GetAck");
-                                ReplicationEvent::GetAck {
-                                    min_ack: *min_acks_wanted,
-                                    resp: tx,
-                                }
-                                .emit()
-                                .await
-                                .expect("Unable to send GETACK");
-                                let timeout_ms = timeout_ms * 4;
-                                match tokio::time::timeout(
-                                    Duration::from_millis(timeout_ms as u64),
-                                    rx,
-                                )
-                                .await
-                                {
-                                    Ok(Ok(value)) => {
-                                        let acks_received = value;
-                                        let resp_type = RESPType::Integer(acks_received as i64);
-                                        let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
-                                        debug!("✅ What did I receive: {}", xx);
-                                        let response =
-                                            writer.write_all(&resp_type.as_bytes()).await;
-                                        debug!("Done with writing. Response - {:?}", response);
-                                    }
-                                    _ => {
-                                        debug!("TIMEOUT or error")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            Wait { .. } => self.process_wait_cmd(writer).await?,
             CustomNewLine | ExitConn => {}
+        };
+        Ok(())
+    }
+
+    async fn process_wait_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+        let Wait {
+            ack_wanted,
+            timeout_ms,
+        } = self
+        else {
+            anyhow::bail!("Not a wait cmd");
+        };
+        let (replication_event_resp_emitter, replication_event_resp_listener) =
+            oneshot::channel::<usize>();
+        ReplicationEvent::GetNumOfReplicas {
+            resp: replication_event_resp_emitter,
+        }
+        .emit()
+        .await?;
+        let num_replicas = replication_event_resp_listener.await?;
+
+        if num_replicas == 0 {
+            let resp_type = RESPType::Integer(num_replicas as i64);
+            writer.write_all(&resp_type.as_bytes()).await?;
+            return Ok(());
+        }
+
+        let (db_event_resp_emitter, db_event_resp_listener) = oneshot::channel::<bool>();
+        Database::emit(DatabaseEvent::WasLastCommandSet {
+            resp: db_event_resp_emitter,
+        })
+        .await?;
+        let was_last_command_set = db_event_resp_listener.await?;
+
+        if was_last_command_set == false {
+            let resp_type = RESPType::Integer(num_replicas as i64);
+            writer.write_all(&resp_type.as_bytes()).await?;
+            return Ok(());
+        }
+
+        let (replication_event_resp_emitter, replication_event_resp_listener) =
+            oneshot::channel::<usize>();
+        debug!("(inside of wait): Emitting ReplicationEvent::GetAck");
+        ReplicationEvent::GetAck {
+            ack_wanted: *ack_wanted,
+            resp: replication_event_resp_emitter,
+        }
+        .emit()
+        .await?;
+
+        match tokio::time::timeout(
+            Duration::from_millis(*timeout_ms as u64),
+            replication_event_resp_listener,
+        )
+        .await
+        {
+            Ok(Ok(value)) => {
+                let acks_received = value;
+                let resp_type = RESPType::Integer(acks_received as i64);
+                let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
+                debug!("✅ What did I receive: {}", xx);
+                let response = writer.write_all(&resp_type.as_bytes()).await;
+                debug!("Done with writing. Response - {:?}", response);
+            }
+            _ => {
+                debug!("TIMEOUT or error")
+            }
         };
         Ok(())
     }

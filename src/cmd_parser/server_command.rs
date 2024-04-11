@@ -30,7 +30,7 @@ pub enum ServerCommand {
         value: String,
     },
     Wait {
-        num_replicas: usize,
+        ack_wanted: usize,
         timeout_ms: usize,
     },
     CustomNewLine,
@@ -78,7 +78,7 @@ fn parse_wait_cmd(items: &[RESPType]) -> R {
     };
     let num_replicas = num_replicas.parse::<usize>()?;
     Ok(ServerCommand::Wait {
-        num_replicas,
+        ack_wanted: num_replicas,
         timeout_ms: value.parse::<usize>()?,
     })
 }

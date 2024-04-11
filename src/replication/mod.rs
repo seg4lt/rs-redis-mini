@@ -29,7 +29,7 @@ pub enum ReplicationEvent {
         resp: oneshot::Sender<usize>,
     },
     GetAck {
-        min_ack: usize,
+        ack_wanted: usize,
         resp: oneshot::Sender<usize>,
     },
 }
@@ -71,7 +71,10 @@ impl ReplicationEvent {
                     GetNumOfReplicas { resp: recv_chan } => {
                         let _ = recv_chan.send(streams_map.len());
                     }
-                    GetAck { min_ack, resp } => {
+                    GetAck {
+                        ack_wanted: min_ack,
+                        resp,
+                    } => {
                         let mut acks_received = 0;
 
                         let req = RESPType::Array(vec![
