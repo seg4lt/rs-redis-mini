@@ -83,15 +83,15 @@ impl ReplicationEvent {
                             let (reader, mut writer) = streams.split();
                             debug!("Sending GET ACK TO slave");
                             let _ = writer.write_all(&req.as_bytes()).await;
-                            // streams.flush().await.unwrap();
+                            writer.flush().await.unwrap();
                             debug!("Writing to one slave");
                             let span =
                                 tracing::span!(tracing::Level::DEBUG, "READING ACK FROM CLIENT");
                             let _guard = span.enter();
-                            debug!("Creating bufferred reader");
-                            let mut reader = BufReader::new(reader);
-                            let resp_type = RESPType::parse(&mut reader).await.unwrap();
-                            debug!("RESP from slave - {:?}", resp_type);
+                            // debug!("Creating bufferred reader");
+                            // let mut reader = BufReader::new(reader);
+                            // let resp_type = RESPType::parse(&mut reader).await.unwrap();
+                            // debug!("RESP from slave - {:?}", resp_type);
                             acks_received += 1;
                             debug!(
                                 "Acks received {:?} -- min_acks -- {}",

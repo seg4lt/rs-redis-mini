@@ -5,7 +5,7 @@ use tokio::{
         TcpStream,
     },
 };
-use tracing::debug;
+use tracing::{debug, debug_span};
 
 use crate::{
     app_config::AppConfig,
@@ -31,6 +31,8 @@ impl Slave {
             receive_rdb_file(&mut reader).await;
             let mut bytes_received = 0;
             loop {
+                let span = debug_span!("SLAVE");
+                let _guard = span.enter();
                 let resp_type = RESPType::parse(&mut reader).await.unwrap();
                 let client_cmd = ServerCommand::from(&resp_type).unwrap();
                 let slave_cmd = SlaveCommand::from(&client_cmd).unwrap();

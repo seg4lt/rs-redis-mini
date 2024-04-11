@@ -117,7 +117,7 @@ impl ServerCommand {
                             }
                             true => {
                                 let (tx, rx) = oneshot::channel::<usize>();
-                                debug!("Sending GETACK TO client");
+                                debug!("(inside of wait): Emitting ReplicationEvent::GetAck");
                                 ReplicationEvent::GetAck {
                                     min_ack: *min_acks_wanted,
                                     resp: tx,
@@ -137,30 +137,14 @@ impl ServerCommand {
                                         let resp_type = RESPType::Integer(acks_received as i64);
                                         let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
                                         debug!("✅ What did I receive: {}", xx);
-                                        writer.write_all(&resp_type.as_bytes()).await?;
-                                        debug!("Done with writing");
+                                        let response =
+                                            writer.write_all(&resp_type.as_bytes()).await;
+                                        debug!("Done with writing. Response - {:?}", response);
                                     }
                                     _ => {
                                         debug!("TIMEOUT or error")
                                     }
                                 }
-
-                                // select! {
-                                //      _ = tokio::time::sleep(std::time::Duration::from_millis(timeout_ms as u64)) => {
-                                //             debug!("⏰ Timedout,  {:?}", Instant::now().duration_since(start));
-                                //             let resp_type = RESPType::Integer(0);
-                                //             writer.write_all(&resp_type.as_bytes()).await?;
-                                //      }
-                                //      acks_received = rx => {
-                                //          // This is not multi-threaded, so either we get 0 or whole acks
-                                //          let acks_received = acks_received.unwrap();
-                                //          let resp_type = RESPType::Integer(acks_received as i64);
-                                //          let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
-                                //          debug!("✅ What did I receive: {}", xx);
-                                //          writer.write_all(&resp_type.as_bytes()).await?;
-                                //          debug!("Done with writing")
-                                //      }
-                                // }
                             }
                         }
                     }

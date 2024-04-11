@@ -17,7 +17,7 @@ impl RESPType {
     // TODO: Need to study more on Box::pin
     #[async_recursion]
     pub async fn parse<'a>(reader: &'a mut BufReader<ReadHalf<'_>>) -> anyhow::Result<RESPType> {
-        debug!("Trying to read from client");
+        // debug!("Trying to read from client");
         let mut buf = [0; 1];
         let count = reader
             .read(&mut buf)
@@ -28,7 +28,7 @@ impl RESPType {
             debug!("GOT EOF");
             return Ok(RESPType::EOF);
         }
-        debug!("DataType identifying ASCII:({})", buf[0]);
+        // debug!("DataType identifying ASCII:({})", buf[0]);
         let request_resp_type = match buf[0] {
             b'*' => {
                 let count = RESPType::read_count(reader).await?;
@@ -46,7 +46,7 @@ impl RESPType {
             b'`' => RESPType::read_custom_command(reader).await?,
             _ => bail!("Unable to determine data type: {}", buf[0] as char),
         };
-        debug!("Request RESPType - {:?}", request_resp_type);
+        // debug!("Request RESPType - {:?}", request_resp_type);
         Ok(request_resp_type)
     }
 
