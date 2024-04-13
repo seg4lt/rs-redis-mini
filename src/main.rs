@@ -1,5 +1,7 @@
 #![warn(clippy::all)]
 
+use std::io::Read;
+
 use tracing::debug;
 
 use crate::{
@@ -11,6 +13,7 @@ pub(crate) mod cmd_parser;
 pub(crate) mod cmd_processor;
 pub(crate) mod database;
 pub(crate) mod log;
+pub(crate) mod rds_file;
 pub(crate) mod replication;
 pub(crate) mod resp_type;
 pub(crate) mod server;
