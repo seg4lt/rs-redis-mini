@@ -7,18 +7,21 @@ use tokio::{
 };
 use tracing::debug;
 
-use crate::{binary, fdbg};
+use crate::{app_config::AppConfig, binary, fdbg};
 
 pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> {
-    let file = File::open("./redis_one.rdb").await?;
+    let mut rdb_map: HashMap<String, String> = HashMap::new();
+    let dir = AppConfig::get_rds_dir();
+    let rdb_file = AppConfig::get_rds_file_name();
+    let Ok(file) = File::open(format!("{}/{}", dir, rdb_file)).await else {
+        return Ok(rdb_map);
+    };
     let mut rdb_reader = BufReader::new(file);
 
     let file_header = read_string_encoded(&mut rdb_reader, 5).await?;
     let version = read_string_encoded(&mut rdb_reader, 4).await?;
     tracing::debug!("{} {}", file_header, version);
     let mut i = 0;
-
-    let mut rdb_map: HashMap<String, String> = HashMap::new();
 
     loop {
         let op_code = read_bytes(&mut rdb_reader, 1)

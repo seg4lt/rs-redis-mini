@@ -8,6 +8,7 @@ use crate::{
     app_config::AppConfig,
     cmd_parser::server_command::ServerCommand,
     database::{Database, DatabaseEvent},
+    rds_file::parse_rdb_file,
     replication::ReplicationEvent,
     resp_type::RESPType,
     LINE_ENDING,
@@ -115,6 +116,19 @@ impl ServerCommand {
                     _ => bail!("CONFIG key not supported yet"),
                 }
             }
+            Keys(flag) => match flag.as_str() {
+                "*" => {
+                    let map = parse_rdb_file().await?;
+                    let resp = RESPType::Array(
+                        map.keys()
+                            .map(|key| RESPType::BulkString(key.to_owned()))
+                            .collect::<Vec<RESPType>>(),
+                    );
+                    writer.write_all(&resp.as_bytes()).await?;
+                    writer.flush().await?;
+                }
+                _ => unimplemented!("KEYS command only supports *"),
+            },
             CustomNewLine | ExitConn => {}
         };
         Ok(())
