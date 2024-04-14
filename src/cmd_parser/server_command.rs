@@ -39,6 +39,12 @@ pub enum ServerCommand {
     },
     Keys(String),
     Type(String),
+    XAdd {
+        stream_key: String,
+        stream_id: String,
+        key: String,
+        value: String,
+    },
     CustomNewLine,
     ExitConn,
 }
@@ -74,8 +80,30 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "CONFIG" => parse_config_cmd(&items[1..]),
         "KEYS" => parse_keys_cmd(&items[1..]),
         "TYPE" => parse_type_cmd(&items[1..]),
+        "XADD" => parse_xadd_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
+}
+
+fn parse_xadd_cmd(items: &[RESPType]) -> R {
+    let Some(RESPType::BulkString(stream_key)) = items.get(0) else {
+        bail!(fdbg!("XADD must have stream_key"));
+    };
+    let Some(RESPType::BulkString(stream_id)) = items.get(1) else {
+        bail!(fdbg!("XADD must have stream_id"));
+    };
+    let Some(RESPType::BulkString(key)) = items.get(2) else {
+        bail!(fdbg!("XADD must have key"));
+    };
+    let Some(RESPType::BulkString(value)) = items.get(3) else {
+        bail!(fdbg!("XADD must have value"));
+    };
+    Ok(ServerCommand::XAdd {
+        stream_key: stream_key.to_string(),
+        stream_id: stream_id.to_string(),
+        key: key.to_string(),
+        value: value.to_string(),
+    })
 }
 
 fn parse_type_cmd(items: &[RESPType]) -> R {

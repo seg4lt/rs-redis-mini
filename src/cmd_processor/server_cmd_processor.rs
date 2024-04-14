@@ -143,6 +143,26 @@ impl ServerCommand {
                 writer.write_all(&resp.as_bytes()).await?;
                 writer.flush().await?;
             }
+            XAdd {
+                stream_key,
+                stream_id,
+                key,
+                value,
+            } => {
+                let (tx, rx) = oneshot::channel::<String>();
+                Database::emit(DatabaseEvent::XAdd {
+                    resp: tx,
+                    stream_key: stream_key.clone(),
+                    stream_id: stream_id.clone(),
+                    key: key.clone(),
+                    value: value.clone(),
+                })
+                .await?;
+                let value = rx.await?;
+                let resp = RESPType::BulkString(value);
+                writer.write_all(&resp.as_bytes()).await?;
+                writer.flush().await?;
+            }
             CustomNewLine | ExitConn => {}
         };
         Ok(())

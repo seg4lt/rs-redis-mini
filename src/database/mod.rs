@@ -34,19 +34,30 @@ pub enum DatabaseEvent {
         resp: oneshot::Sender<String>,
         key: String,
     },
+    XAdd {
+        resp: oneshot::Sender<String>,
+        stream_key: String,
+        stream_id: String,
+        key: String,
+        value: String,
+    },
     WasLastCommandSet {
         resp: oneshot::Sender<bool>,
     },
 }
 pub struct DatabaseValue {
-    value: String,
-    type_of: DatabaseValueType,
+    value: DbValueType,
     exp_time: Option<Instant>,
 }
 
-pub enum DatabaseValueType {
-    String,
-    Stream,
+pub enum DbValueType {
+    String(String),
+    Stream(Vec<StreamDbValueType>),
+}
+pub struct StreamDbValueType {
+    stream_id: String,
+    key: String,
+    value: String,
 }
 
 pub struct Database {
@@ -95,11 +106,24 @@ impl Database {
                             .expect("Unable to send type back to caller");
                         last_command_was_set = false;
                     }
+                    XAdd {
+                        resp,
+                        stream_key,
+                        stream_id,
+                        key,
+                        value,
+                    } => {
+                        db.set_stream(&stream_key, &stream_id, &key, &value);
+                        resp.send(stream_id)
+                            .expect("Unable to send stream key back to caller");
+                        last_command_was_set = true;
+                    }
                 }
             }
         });
         db_event_listener
     }
+
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
         let Some(emitter) = LISTENER.get() else {
             panic!("DatabaseEventEmitter not initialized");
@@ -107,9 +131,31 @@ impl Database {
         emitter.send(event).await?;
         Ok(())
     }
+
     fn keys(&self) -> Vec<String> {
         let value = self.db.keys().map(|k| k.to_owned()).collect();
         value
+    }
+
+    fn set_stream(
+        &mut self,
+        stream_key: &String,
+        stream_id: &String,
+        key: &String,
+        value: &String,
+    ) {
+        info!("Setting stream: {} with value: {}", stream_key, value);
+        self.db.insert(
+            stream_key.to_owned(),
+            DatabaseValue {
+                value: DbValueType::Stream(vec![StreamDbValueType {
+                    stream_id: stream_id.to_owned(),
+                    key: key.to_owned(),
+                    value: value.to_owned(),
+                }]),
+                exp_time: None,
+            },
+        );
     }
 
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
@@ -125,9 +171,8 @@ impl Database {
         self.db.insert(
             key,
             DatabaseValue {
-                value,
+                value: DbValueType::String(value),
                 exp_time,
-                type_of: DatabaseValueType::String,
             },
         );
     }
@@ -136,7 +181,10 @@ impl Database {
         let value = self.db.get(key);
         match value {
             None => "none",
-            Some(kv) => kv.type_of.to_str(),
+            Some(kv) => match kv.value {
+                DbValueType::String(_) => "string",
+                DbValueType::Stream(_) => "stream",
+            },
         }
     }
 
@@ -146,10 +194,20 @@ impl Database {
         let value = match value {
             None => None,
             Some(kv) => match kv.exp_time {
-                None => Some(kv.value.clone()),
+                None => {
+                    let value = match &kv.value {
+                        DbValueType::String(v) => v.clone(),
+                        _ => unimplemented!("Only string value can invoke GET for now"),
+                    };
+                    Some(value.clone())
+                }
                 Some(exp_time) => {
                     if exp_time > Instant::now() {
-                        Some(kv.value.clone())
+                        let value = match &kv.value {
+                            DbValueType::String(v) => v.clone(),
+                            _ => unimplemented!("Only string value can invoke GET for now"),
+                        };
+                        Some(value.clone())
                     } else {
                         self.db.remove(key);
                         None
@@ -158,14 +216,5 @@ impl Database {
             },
         };
         value
-    }
-}
-
-impl DatabaseValueType {
-    pub fn to_str(&self) -> &str {
-        match self {
-            DatabaseValueType::String => "string",
-            DatabaseValueType::Stream => "stream",
-        }
     }
 }
