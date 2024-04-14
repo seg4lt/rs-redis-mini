@@ -30,6 +30,10 @@ pub enum DatabaseEvent {
         resp: oneshot::Sender<Vec<String>>,
         flag: String,
     },
+    Type {
+        resp: oneshot::Sender<String>,
+        key: String,
+    },
     WasLastCommandSet {
         resp: oneshot::Sender<bool>,
     },
@@ -78,6 +82,12 @@ impl Database {
                         resp.send(keys).expect("Unable to send keys back to caller");
                         last_command_was_set = false;
                     }
+                    Type { resp, key } => {
+                        let value = db.type_of(key);
+                        resp.send(value)
+                            .expect("Unable to send type back to caller");
+                        last_command_was_set = false;
+                    }
                 }
             }
         });
@@ -93,6 +103,12 @@ impl Database {
     fn keys(&self) -> Vec<String> {
         let value = self.db.keys().map(|k| k.to_owned()).collect();
         value
+    }
+    fn type_of(&mut self, key: String) -> String {
+        let value = self.get(&key).map(|v| v.to_owned());
+        value
+            .map(|_| "string".to_owned())
+            .unwrap_or("none".to_string())
     }
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
         info!("Setting key: {} with value: {}", key, value);

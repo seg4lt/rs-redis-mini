@@ -131,6 +131,18 @@ impl ServerCommand {
                 writer.write_all(&resp.as_bytes()).await?;
                 writer.flush().await?;
             }
+            Type(key) => {
+                let (tx, rx) = oneshot::channel::<String>();
+                Database::emit(DatabaseEvent::Type {
+                    resp: tx,
+                    key: key.to_owned(),
+                })
+                .await?;
+                let value = rx.await?;
+                let resp = RESPType::SimpleString(value);
+                writer.write_all(&resp.as_bytes()).await?;
+                writer.flush().await?;
+            }
             CustomNewLine | ExitConn => {}
         };
         Ok(())

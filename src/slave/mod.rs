@@ -34,7 +34,7 @@ impl Slave {
                 let span = debug_span!("SLAVE");
                 let _guard = span.enter();
                 let resp_type = RESPType::parse(&mut reader).await.unwrap();
-                let client_cmd = ServerCommand::from(&resp_type).await.unwrap();
+                let client_cmd = ServerCommand::from(&resp_type).unwrap();
                 let slave_cmd = SlaveCommand::from(&client_cmd).unwrap();
                 slave_cmd
                     .process_slave_cmd(&mut writer, bytes_received)

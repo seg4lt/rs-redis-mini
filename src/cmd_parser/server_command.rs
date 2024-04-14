@@ -38,14 +38,15 @@ pub enum ServerCommand {
         key: String,
     },
     Keys(String),
+    Type(String),
     CustomNewLine,
     ExitConn,
 }
 
 impl ServerCommand {
-    pub async fn from(resp_type: &RESPType) -> anyhow::Result<Self> {
+    pub fn from(resp_type: &RESPType) -> anyhow::Result<Self> {
         match resp_type {
-            RESPType::Array(items) => parse_client_cmd(&items).await,
+            RESPType::Array(items) => parse_client_cmd(&items),
             RESPType::CustomNewLine => Ok(ServerCommand::CustomNewLine),
             RESPType::EOF => Ok(ServerCommand::ExitConn),
             _ => bail!("Client command must be of type array"),
@@ -53,7 +54,7 @@ impl ServerCommand {
     }
 }
 
-async fn parse_client_cmd(items: &[RESPType]) -> R {
+fn parse_client_cmd(items: &[RESPType]) -> R {
     if items.is_empty() {
         bail!("Client command array must have at least one element");
     }
@@ -71,12 +72,20 @@ async fn parse_client_cmd(items: &[RESPType]) -> R {
         "PSYNC" => parse_psync_cmd(&items[1..]),
         "WAIT" => parse_wait_cmd(&items[1..]),
         "CONFIG" => parse_config_cmd(&items[1..]),
-        "KEYS" => parse_keys_cmd(&items[1..]).await,
+        "KEYS" => parse_keys_cmd(&items[1..]),
+        "TYPE" => parse_type_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
 }
 
-async fn parse_keys_cmd(items: &[RESPType]) -> R {
+fn parse_type_cmd(items: &[RESPType]) -> R {
+    let Some(RESPType::BulkString(value)) = items.get(0) else {
+        bail!(fdbg!("TYPE command must have at least one key"));
+    };
+    Ok(ServerCommand::Type(value.to_string()))
+}
+
+fn parse_keys_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(value)) = items.get(0) else {
         bail!(fdbg!("KEYS command must have at least one key"));
     };

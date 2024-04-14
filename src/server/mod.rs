@@ -34,7 +34,7 @@ impl Server {
         let mut reader = BufReader::new(reader);
         loop {
             let resp_type = RESPType::parse(&mut reader).await?;
-            let client_cmd = ServerCommand::from(&resp_type).await?;
+            let client_cmd = ServerCommand::from(&resp_type)?;
             client_cmd
                 .process_client_cmd(&mut writer)
                 .await
