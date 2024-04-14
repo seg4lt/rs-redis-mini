@@ -40,8 +40,15 @@ pub enum DatabaseEvent {
 }
 pub struct DatabaseValue {
     value: String,
+    type_of: DatabaseValueType,
     exp_time: Option<Instant>,
 }
+
+pub enum DatabaseValueType {
+    String,
+    Stream,
+}
+
 pub struct Database {
     db: HashMap<String, DatabaseValue>,
 }
@@ -83,8 +90,8 @@ impl Database {
                         last_command_was_set = false;
                     }
                     Type { resp, key } => {
-                        let value = db.type_of(key);
-                        resp.send(value)
+                        let value = db.get_type(&key);
+                        resp.send(value.to_string())
                             .expect("Unable to send type back to caller");
                         last_command_was_set = false;
                     }
@@ -104,12 +111,7 @@ impl Database {
         let value = self.db.keys().map(|k| k.to_owned()).collect();
         value
     }
-    fn type_of(&mut self, key: String) -> String {
-        let value = self.get(&key).map(|v| v.to_owned());
-        value
-            .map(|_| "string".to_owned())
-            .unwrap_or("none".to_string())
-    }
+
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
         info!("Setting key: {} with value: {}", key, value);
         let exp_time = match flags {
@@ -120,8 +122,24 @@ impl Database {
         };
         let value = value.to_owned();
         let key = key.to_owned();
-        self.db.insert(key, DatabaseValue { value, exp_time });
+        self.db.insert(
+            key,
+            DatabaseValue {
+                value,
+                exp_time,
+                type_of: DatabaseValueType::String,
+            },
+        );
     }
+
+    fn get_type(&mut self, key: &String) -> &str {
+        let value = self.db.get(key);
+        match value {
+            None => "none",
+            Some(kv) => kv.type_of.to_str(),
+        }
+    }
+
     fn get(&mut self, key: &String) -> Option<String> {
         info!("Getting value for key: {}", key);
         let value = self.db.get(key);
@@ -140,5 +158,14 @@ impl Database {
             },
         };
         value
+    }
+}
+
+impl DatabaseValueType {
+    pub fn to_str(&self) -> &str {
+        match self {
+            DatabaseValueType::String => "string",
+            DatabaseValueType::Stream => "stream",
+        }
     }
 }
