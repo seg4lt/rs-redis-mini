@@ -1,6 +1,10 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ops::Add,
+    time::{Duration, SystemTime},
+};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
@@ -21,15 +25,13 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> 
     let Ok(file) = File::open(format!("{}/{}", dir, rdb_file)).await else {
         return Ok(rdb_map);
     };
-    let mut rdb_reader = BufReader::new(file);
+    let mut reader = BufReader::new(file);
 
-    let file_header = read_string_encoded(&mut rdb_reader, 5).await?;
-    let version = read_string_encoded(&mut rdb_reader, 4).await?;
+    let file_header = read_string_encoded(&mut reader, 5).await?;
+    let version = read_string_encoded(&mut reader, 4).await?;
     tracing::debug!("{} {}", file_header, version);
-    let mut i = 0;
-
     loop {
-        let op_code = read_bytes(&mut rdb_reader, 1)
+        let op_code = read_bytes(&mut reader, 1)
             .await
             .context(fdbg!("Unable to read OpCode"))?;
         // tracing::debug!("OpCode = {:x?}", &op_code[0]);
@@ -40,51 +42,101 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> 
             }
             0xFA => {
                 // Auxiliary fields
-                let key = read_string_encoded_key(&mut rdb_reader).await?;
-                let value = read_length_encoded_key_as_string(&mut rdb_reader).await?;
+                let key = read_string_encoded_key(&mut reader).await?;
+                let value = read_length_encoded_key_as_string(&mut reader).await?;
                 debug!("AUX {key} = {value}");
-                i += 1;
-                if i == 6 {
-                    break;
-                }
             }
             0xFE => {
-                let value = read_length(&mut rdb_reader, 1).await?;
+                let value = read_length(&mut reader, 1).await?;
                 debug!("Database selector = {value}")
+            }
+            // "expiry time in seconds", followed by 4 byte unsigned int
+            0xFD => {
+                let time = read_length(&mut reader, 4).await?;
+                debug!("Reader time seconds = {time}");
+                // break;
+                // let (key, value) = read_key_value(&mut reader, op_code[0]).await?;
+                // rdb_map.insert(key, value);
+            }
+            // "expiry time in ms", followed by 8 byte unsigned long
+            0xFC => {
+                let time = read_bytes(&mut reader, 8).await?;
+                let exp_time = u128::from_le_bytes(time[..8].try_into().unwrap());
+                let now = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap();
+                let now_millis = now.as_millis();
+                let value_type = read_bytes(&mut reader, 1)
+                    .await
+                    .context(fdbg!("Unable to read value type"))?;
+                let (key, value) = read_key_value(&mut reader, value_type[0]).await?;
+                debug!("Reader time ms = {time:?}, {exp_time}, {now_millis}");
+                debug!("Key = {key}, value = {value}");
+
+                if exp_time > now_millis {
+                    let diff = exp_time - now_millis;
+                    let mut map: HashMap<String, String> = HashMap::new();
+                    map.insert("px".to_string(), diff.to_string());
+                    Database::emit(DatabaseEvent::Set {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        flags: map,
+                    })
+                    .await?;
+                    // rdb_map.insert(key, value);
+                }
             }
             0xFB => {
                 debug!("Resize DB OP code found");
-                let size_of_corresponding_hash_table = read_length(&mut rdb_reader, 1).await?;
-                let size_of_corresponding_expire_hash_table =
-                    read_length(&mut rdb_reader, 1).await?;
+                let size_of_corresponding_hash_table = read_length(&mut reader, 1).await?;
+                let size_of_corresponding_expire_hash_table = read_length(&mut reader, 1).await?;
                 debug!("Size of corresponding hash table = {size_of_corresponding_hash_table}");
                 debug!("Size of corresponding exprire hash table = {size_of_corresponding_expire_hash_table}");
             }
             // Not special character, Try to read the data
-            _ => match op_code[0] {
-                // 0 = String Encoding
-                0 => {
-                    let key = read_string_encoded_key(&mut rdb_reader).await?;
-                    let value = read_string_encoded_key(&mut rdb_reader).await?;
-                    debug!("Key = {key}, Value = {value}");
-                    rdb_map.insert(key, value);
-                }
-                // Other encoding not imported yet
-                _ => debug!("Unknown OpCode"),
-            },
+            _ => {
+                let (key, value) = read_key_value(&mut reader, op_code[0]).await?;
+                debug!("Key {key}, Value {value}");
+                let event = DatabaseEvent::Set {
+                    key: key.to_string(),
+                    value: value.to_string(),
+                    flags: HashMap::new(),
+                };
+                Database::emit(event).await?;
+            }
         }
     }
 
-    for (k, v) in &rdb_map {
-        Database::emit(DatabaseEvent::Set {
-            key: k.to_string(),
-            value: v.to_string(),
-            flags: HashMap::new(),
-        })
-        .await?;
-    }
+    // for (k, v) in &rdb_map {
+    //     Database::emit(DatabaseEvent::Set {
+    //         key: k.to_string(),
+    //         value: v.to_string(),
+    //         flags: HashMap::new(),
+    //     })
+    //     .await?;
+    // }
 
     Ok(rdb_map)
+}
+
+//  async fn read_key_value<R>(reader: &mut R, value_type: u8) -> anyhow::Result<(String, String)>
+// where R: AsyncBufRead + AsyncReadExt + Unpin {
+async fn read_key_value<R>(reader: &mut R, value_type: u8) -> anyhow::Result<(String, String)>
+where
+    R: AsyncBufRead + AsyncReadExt + Unpin,
+{
+    let value = match value_type {
+        // 0 = String Encoding
+        0 => {
+            let key = read_string_encoded_key(reader).await?;
+            let value = read_string_encoded_key(reader).await?;
+            debug!("Key = {key}, Value = {value}");
+            (key, value)
+        }
+        // Other encoding not imported yet
+        _ => bail!("Unknown OpCode"),
+    };
+    Ok(value)
 }
 
 async fn read_length_encoded_key_as_string<R>(reader: &mut R) -> anyhow::Result<String>

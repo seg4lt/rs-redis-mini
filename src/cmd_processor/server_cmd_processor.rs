@@ -117,22 +117,18 @@ impl ServerCommand {
                 }
             }
             Keys(flag) => {
-                // This should probably be stored on our Database or maybe on it own place
-                let map = parse_rdb_file().await?;
-                let resp = match flag.as_str() {
-                    "*" => RESPType::Array(
-                        map.keys()
-                            .map(|key| RESPType::BulkString(key.to_owned()))
-                            .collect::<Vec<RESPType>>(),
-                    ),
-                    key => {
-                        let value = map.get(key);
-                        match value {
-                            Some(value) => RESPType::BulkString(value.to_string()),
-                            None => RESPType::NullBulkString,
-                        }
-                    }
-                };
+                let (tx, rx) = oneshot::channel::<Vec<String>>();
+                Database::emit(DatabaseEvent::Keys {
+                    resp: tx,
+                    flag: flag.to_owned(),
+                })
+                .await?;
+                let value = rx
+                    .await?
+                    .iter()
+                    .map(|key| RESPType::BulkString(key.to_owned()))
+                    .collect();
+                let resp = RESPType::Array(value);
                 writer.write_all(&resp.as_bytes()).await?;
                 writer.flush().await?;
             }

@@ -26,6 +26,10 @@ pub enum DatabaseEvent {
         resp: oneshot::Sender<Option<String>>,
         key: String,
     },
+    Keys {
+        resp: oneshot::Sender<Vec<String>>,
+        flag: String,
+    },
     WasLastCommandSet {
         resp: oneshot::Sender<bool>,
     },
@@ -63,6 +67,17 @@ impl Database {
                             .expect("Unable to send WasLastCommandSet back to caller");
                         last_command_was_set = false;
                     }
+                    Keys { resp, flag } => {
+                        tracing::debug!("Getting keys with flag: {}", flag);
+                        if flag != "*" {
+                            resp.send(vec![])
+                                .expect("Unable to send keys back to caller");
+                            continue;
+                        }
+                        let keys = db.keys();
+                        resp.send(keys).expect("Unable to send keys back to caller");
+                        last_command_was_set = false;
+                    }
                 }
             }
         });
@@ -74,6 +89,10 @@ impl Database {
         };
         emitter.send(event).await?;
         Ok(())
+    }
+    fn keys(&self) -> Vec<String> {
+        let value = self.db.keys().map(|k| k.to_owned()).collect();
+        value
     }
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
         info!("Setting key: {} with value: {}", key, value);
