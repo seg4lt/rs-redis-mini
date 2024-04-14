@@ -1,7 +1,5 @@
 #![warn(clippy::all)]
 
-use std::io::Read;
-
 use tracing::debug;
 
 use crate::{

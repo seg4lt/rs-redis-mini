@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::bail;
 
-use crate::{fdbg, rds_file::parse_rdb_file, resp_type::RESPType};
+use crate::{fdbg, resp_type::RESPType};
 
 type R = anyhow::Result<ServerCommand>;
 

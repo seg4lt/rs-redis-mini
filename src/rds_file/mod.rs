@@ -1,13 +1,9 @@
-use std::{
-    collections::HashMap,
-    ops::Add,
-    time::{Duration, SystemTime},
-};
+use std::{collections::HashMap, time::SystemTime};
 
 use anyhow::{bail, Context};
 use tokio::{
     fs::File,
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufRead, AsyncReadExt, BufReader},
 };
 use tracing::debug;
 
@@ -18,12 +14,11 @@ use crate::{
     fdbg,
 };
 
-pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> {
-    let mut rdb_map: HashMap<String, String> = HashMap::new();
+pub(crate) async fn parse_rdb_file() -> anyhow::Result<()> {
     let dir = AppConfig::get_rds_dir();
     let rdb_file = AppConfig::get_rds_file_name();
     let Ok(file) = File::open(format!("{}/{}", dir, rdb_file)).await else {
-        return Ok(rdb_map);
+        return Ok(());
     };
     let mut reader = BufReader::new(file);
 
@@ -54,14 +49,15 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> 
             0xFD => {
                 let time = read_length(&mut reader, 4).await?;
                 debug!("Reader time seconds = {time}");
-                // break;
+                // Not implemented for now
                 // let (key, value) = read_key_value(&mut reader, op_code[0]).await?;
                 // rdb_map.insert(key, value);
             }
             // "expiry time in ms", followed by 8 byte unsigned long
             0xFC => {
                 let time = read_bytes(&mut reader, 8).await?;
-                let exp_time = u128::from_le_bytes(time[..8].try_into().unwrap());
+                let time: [u8; 8] = time[..8].try_into().unwrap();
+                let exp_time = u64::from_le_bytes(time) as u128;
                 let now = SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .unwrap();
@@ -70,9 +66,6 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> 
                     .await
                     .context(fdbg!("Unable to read value type"))?;
                 let (key, value) = read_key_value(&mut reader, value_type[0]).await?;
-                debug!("Reader time ms = {time:?}, {exp_time}, {now_millis}");
-                debug!("Key = {key}, value = {value}");
-
                 if exp_time > now_millis {
                     let diff = exp_time - now_millis;
                     let mut map: HashMap<String, String> = HashMap::new();
@@ -83,7 +76,6 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> 
                         flags: map,
                     })
                     .await?;
-                    // rdb_map.insert(key, value);
                 }
             }
             0xFB => {
@@ -106,17 +98,7 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> 
             }
         }
     }
-
-    // for (k, v) in &rdb_map {
-    //     Database::emit(DatabaseEvent::Set {
-    //         key: k.to_string(),
-    //         value: v.to_string(),
-    //         flags: HashMap::new(),
-    //     })
-    //     .await?;
-    // }
-
-    Ok(rdb_map)
+    Ok(())
 }
 
 //  async fn read_key_value<R>(reader: &mut R, value_type: u8) -> anyhow::Result<(String, String)>
