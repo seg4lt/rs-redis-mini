@@ -116,19 +116,26 @@ impl ServerCommand {
                     _ => bail!("CONFIG key not supported yet"),
                 }
             }
-            Keys(flag) => match flag.as_str() {
-                "*" => {
-                    let map = parse_rdb_file().await?;
-                    let resp = RESPType::Array(
+            Keys(flag) => {
+                // This should probably be stored on our Database or maybe on it own place
+                let map = parse_rdb_file().await?;
+                let resp = match flag.as_str() {
+                    "*" => RESPType::Array(
                         map.keys()
                             .map(|key| RESPType::BulkString(key.to_owned()))
                             .collect::<Vec<RESPType>>(),
-                    );
-                    writer.write_all(&resp.as_bytes()).await?;
-                    writer.flush().await?;
-                }
-                _ => unimplemented!("KEYS command only supports *"),
-            },
+                    ),
+                    key => {
+                        let value = map.get(key);
+                        match value {
+                            Some(value) => RESPType::BulkString(value.to_string()),
+                            None => RESPType::NullBulkString,
+                        }
+                    }
+                };
+                writer.write_all(&resp.as_bytes()).await?;
+                writer.flush().await?;
+            }
             CustomNewLine | ExitConn => {}
         };
         Ok(())

@@ -5,7 +5,8 @@ use std::io::Read;
 use tracing::debug;
 
 use crate::{
-    database::Database, log::setup_log, replication::ReplicationEvent, server::Server, slave::Slave,
+    database::Database, log::setup_log, rds_file::parse_rdb_file, replication::ReplicationEvent,
+    server::Server, slave::Slave,
 };
 
 pub(crate) mod app_config;
@@ -26,8 +27,8 @@ pub const NEW_LINE: u8 = b'\n';
 async fn main() -> anyhow::Result<()> {
     setup_log()?;
     debug!("🚀🚀🚀 Logs from your program will appear here! 🚀🚀🚀");
-
     Database::new();
+    parse_rdb_file().await?;
     ReplicationEvent::setup();
     Slave::setup().await?;
     Server::start().await?;

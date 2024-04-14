@@ -7,7 +7,12 @@ use tokio::{
 };
 use tracing::debug;
 
-use crate::{app_config::AppConfig, binary, fdbg};
+use crate::{
+    app_config::AppConfig,
+    binary,
+    database::{Database, DatabaseEvent},
+    fdbg,
+};
 
 pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> {
     let mut rdb_map: HashMap<String, String> = HashMap::new();
@@ -69,6 +74,16 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<HashMap<String, String>> 
             },
         }
     }
+
+    for (k, v) in &rdb_map {
+        Database::emit(DatabaseEvent::Set {
+            key: k.to_string(),
+            value: v.to_string(),
+            flags: HashMap::new(),
+        })
+        .await?;
+    }
+
     Ok(rdb_map)
 }
 
