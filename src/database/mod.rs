@@ -6,6 +6,7 @@ use std::{
 
 use self::db_event::DatabaseEvent::*;
 use self::db_event::{DatabaseEvent, DatabaseValue, DbValueType, StreamDbValueType};
+use anyhow::bail;
 use tokio::sync::mpsc::{self, channel};
 use tracing::{debug, info};
 
@@ -104,9 +105,57 @@ impl Database {
             return Err("ERR The ID specified in XADD must be greater than 0-0".to_string());
         };
         let ms_part = ms_part.parse::<u64>().unwrap();
+        let seq_part = if seq_part == "*" {
+            // When * we need to dynamically generate the seq part
+            let get_stream = self.db.get(stream_key);
+            match get_stream {
+                None => {
+                    if ms_part == 0 {
+                        "1".to_string()
+                    } else {
+                        "0".to_string()
+                    }
+                }
+                Some(db_value) => {
+                    if let DbValueType::Stream(stream) = &db_value.value {
+                        let stream_id = stream
+                            .iter()
+                            .map(|x| x.stream_id.clone())
+                            .find(|x| x.starts_with(ms_part.to_string().as_str()))
+                            .map(|x| {
+                                let Some((_, seq_part)) = x.split_once("-") else {
+                                    if ms_part == 0 {
+                                        return "1".to_string();
+                                    } else {
+                                        return "0".to_string();
+                                    }
+                                };
+                                let new_seq = seq_part.parse::<usize>().unwrap() + 1;
+                                new_seq.to_string()
+                            })
+                            .unwrap_or_else(|| {
+                                if ms_part == 0 {
+                                    return "1".to_string();
+                                } else {
+                                    return "0".to_string();
+                                }
+                            });
+                        stream_id
+                    } else {
+                        if ms_part == 0 {
+                            "1".to_string()
+                        } else {
+                            "0".to_string()
+                        }
+                    }
+                }
+            }
+        } else {
+            seq_part.to_string()
+        };
         let seq_part = seq_part.parse::<u64>().unwrap();
         debug!("Seq part --> {seq_part}");
-        if seq_part <= 0 {
+        if ms_part == 0 && seq_part <= 0 {
             return Err("ERR The ID specified in XADD must be greater than 0-0".to_string());
         }
         let get_stream = self.db.get(stream_key);
@@ -135,18 +184,20 @@ impl Database {
             }
         };
 
+        let new_stream_id = format!("{ms_part}-{seq_part}");
+
         self.db.insert(
             stream_key.to_owned(),
             DatabaseValue {
                 value: DbValueType::Stream(vec![StreamDbValueType {
-                    stream_id: stream_id.to_owned(),
+                    stream_id: new_stream_id.to_owned(),
                     key: key.to_owned(),
                     value: value.to_owned(),
                 }]),
                 exp_time: None,
             },
         );
-        Ok(stream_id.to_owned())
+        Ok(new_stream_id.to_owned())
     }
 
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
