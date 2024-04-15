@@ -149,7 +149,7 @@ impl ServerCommand {
                 key,
                 value,
             } => {
-                let (tx, rx) = oneshot::channel::<String>();
+                let (tx, rx) = oneshot::channel::<Result<String, String>>();
                 Database::emit(DatabaseEvent::XAdd {
                     resp: tx,
                     stream_key: stream_key.clone(),
@@ -158,8 +158,10 @@ impl ServerCommand {
                     value: value.clone(),
                 })
                 .await?;
-                let value = rx.await?;
-                let resp = RESPType::BulkString(value);
+                let resp = match rx.await? {
+                    Ok(value) => RESPType::BulkString(value),
+                    Err(_) => todo!(),
+                };
                 writer.write_all(&resp.as_bytes()).await?;
                 writer.flush().await?;
             }

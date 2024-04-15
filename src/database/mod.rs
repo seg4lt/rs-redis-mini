@@ -35,7 +35,7 @@ pub enum DatabaseEvent {
         key: String,
     },
     XAdd {
-        resp: oneshot::Sender<String>,
+        resp: oneshot::Sender<Result<String, String>>,
         stream_key: String,
         stream_id: String,
         key: String,
@@ -54,6 +54,7 @@ pub enum DbValueType {
     String(String),
     Stream(Vec<StreamDbValueType>),
 }
+
 pub struct StreamDbValueType {
     stream_id: String,
     key: String,
@@ -114,7 +115,7 @@ impl Database {
                         value,
                     } => {
                         db.set_stream(&stream_key, &stream_id, &key, &value);
-                        resp.send(stream_id)
+                        resp.send(Ok(stream_id))
                             .expect("Unable to send stream key back to caller");
                         last_command_was_set = true;
                     }
