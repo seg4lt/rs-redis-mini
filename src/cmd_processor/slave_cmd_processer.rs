@@ -3,7 +3,7 @@ use tracing::debug;
 
 use crate::{
     cmd_parser::slave_command::SlaveCommand,
-    database::{Database, DatabaseEvent},
+    database::{db_event::DatabaseEvent, Database},
     resp_type::RESPType,
 };
 use SlaveCommand::*;

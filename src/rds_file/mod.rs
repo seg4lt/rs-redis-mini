@@ -10,7 +10,7 @@ use tracing::debug;
 use crate::{
     app_config::AppConfig,
     binary,
-    database::{Database, DatabaseEvent},
+    database::{db_event::DatabaseEvent, Database},
     fdbg,
 };
 

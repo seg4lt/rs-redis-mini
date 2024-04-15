@@ -7,7 +7,7 @@ use tracing::debug;
 use crate::{
     app_config::AppConfig,
     cmd_parser::server_command::ServerCommand,
-    database::{Database, DatabaseEvent},
+    database::{db_event::DatabaseEvent, Database},
     replication::ReplicationEvent,
     resp_type::RESPType,
     LINE_ENDING,

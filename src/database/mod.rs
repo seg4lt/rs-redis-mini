@@ -4,63 +4,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tokio::sync::{
-    mpsc::{self, channel},
-    oneshot,
-};
+use self::db_event::DatabaseEvent::*;
+use self::db_event::{DatabaseEvent, DatabaseValue, DbValueType, StreamDbValueType};
+use tokio::sync::mpsc::{self, channel};
 use tracing::info;
-use DatabaseEvent::*;
+
+pub(crate) mod db_event;
 
 pub type DatabaseEventEmitter = mpsc::Sender<DatabaseEvent>;
+
 // Probably shouldn't have this as static, but this makes program bit easier to write
 static LISTENER: OnceLock<DatabaseEventEmitter> = OnceLock::new();
-
-#[derive(Debug)]
-pub enum DatabaseEvent {
-    Set {
-        key: String,
-        value: String,
-        flags: HashMap<String, String>,
-    },
-    Get {
-        resp: oneshot::Sender<Option<String>>,
-        key: String,
-    },
-    Keys {
-        resp: oneshot::Sender<Vec<String>>,
-        flag: String,
-    },
-    Type {
-        resp: oneshot::Sender<String>,
-        key: String,
-    },
-    XAdd {
-        resp: oneshot::Sender<Result<String, String>>,
-        stream_key: String,
-        stream_id: String,
-        key: String,
-        value: String,
-    },
-    WasLastCommandSet {
-        resp: oneshot::Sender<bool>,
-    },
-}
-pub struct DatabaseValue {
-    value: DbValueType,
-    exp_time: Option<Instant>,
-}
-
-pub enum DbValueType {
-    String(String),
-    Stream(Vec<StreamDbValueType>),
-}
-
-pub struct StreamDbValueType {
-    stream_id: String,
-    key: String,
-    value: String,
-}
-
 pub struct Database {
     db: HashMap<String, DatabaseValue>,
 }
