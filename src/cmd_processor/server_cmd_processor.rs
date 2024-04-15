@@ -160,7 +160,7 @@ impl ServerCommand {
                 .await?;
                 let resp = match rx.await? {
                     Ok(value) => RESPType::BulkString(value),
-                    Err(_) => todo!(),
+                    Err(err) => RESPType::Error(err),
                 };
                 writer.write_all(&resp.as_bytes()).await?;
                 writer.flush().await?;

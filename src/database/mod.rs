@@ -7,7 +7,7 @@ use std::{
 use self::db_event::DatabaseEvent::*;
 use self::db_event::{DatabaseEvent, DatabaseValue, DbValueType, StreamDbValueType};
 use tokio::sync::mpsc::{self, channel};
-use tracing::info;
+use tracing::{debug, info};
 
 pub(crate) mod db_event;
 
@@ -68,8 +68,8 @@ impl Database {
                         key,
                         value,
                     } => {
-                        db.set_stream(&stream_key, &stream_id, &key, &value);
-                        resp.send(Ok(stream_id))
+                        let r = db.set_stream(&stream_key, &stream_id, &key, &value);
+                        resp.send(r)
                             .expect("Unable to send stream key back to caller");
                         last_command_was_set = true;
                     }
@@ -98,8 +98,43 @@ impl Database {
         stream_id: &String,
         key: &String,
         value: &String,
-    ) {
+    ) -> Result<String, String> {
         info!("Setting stream: {} with value: {}", stream_key, value);
+        let Some((ms_part, seq_part)) = stream_id.split_once("-") else {
+            return Err("ERR The ID specified in XADD must be greater than 0-0".to_string());
+        };
+        let ms_part = ms_part.parse::<u64>().unwrap();
+        let seq_part = seq_part.parse::<u64>().unwrap();
+        debug!("Seq part --> {seq_part}");
+        if seq_part <= 0 {
+            return Err("ERR The ID specified in XADD must be greater than 0-0".to_string());
+        }
+        let get_stream = self.db.get(stream_key);
+        match get_stream {
+            None => {}
+            Some(db_value) => {
+                let DbValueType::Stream(stream) = &db_value.value else {
+                    return Err("NOT A STREAM".to_string());
+                };
+                let last_stream = stream.last().unwrap();
+                let Some((last_ms_part, last_seq_part)) = last_stream.stream_id.split_once("-")
+                else {
+                    return Err("ERR The ID specified in XADD must be greater than 0-0".to_string());
+                };
+                let last_ms_part = last_ms_part.parse::<u64>().unwrap();
+                let last_seq_part = last_seq_part.parse::<u64>().unwrap();
+
+                debug!("ms_part {ms_part} -- last_ms_part {last_ms_part}");
+                if ms_part < last_ms_part {
+                    return Err("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string());
+                }
+                debug!("seq_part {seq_part} -- last_seq_part {last_seq_part}");
+                if ms_part == last_ms_part && seq_part <= last_seq_part {
+                    return Err("ERR The ID specified in XADD is equal or smaller than the target stream top item".to_string());
+                }
+            }
+        };
+
         self.db.insert(
             stream_key.to_owned(),
             DatabaseValue {
@@ -111,6 +146,7 @@ impl Database {
                 exp_time: None,
             },
         );
+        Ok(stream_id.to_owned())
     }
 
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
