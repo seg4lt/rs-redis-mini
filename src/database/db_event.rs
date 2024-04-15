@@ -43,7 +43,8 @@ pub enum DbValueType {
 }
 
 pub struct StreamDbValueType {
-    pub stream_id: String,
+    pub stream_id_ms_part: u128,
+    pub stream_id_seq_part: usize,
     pub key: String,
     pub value: String,
 }

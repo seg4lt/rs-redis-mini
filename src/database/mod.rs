@@ -100,19 +100,20 @@ impl Database {
         value: &String,
     ) -> Result<String, String> {
         info!("Setting stream: {} with value: {}", stream_key, value);
-        let get_stream_id = self.get_stream_id(stream_key, stream_id)?;
+        let (ms_part, seq_part) = self.get_stream_id(stream_key, stream_id)?;
         self.db.insert(
             stream_key.to_owned(),
             DatabaseValue {
                 value: DbValueType::Stream(vec![StreamDbValueType {
-                    stream_id: get_stream_id.to_owned(),
+                    stream_id_ms_part: ms_part,
+                    stream_id_seq_part: seq_part,
                     key: key.to_owned(),
                     value: value.to_owned(),
                 }]),
                 exp_time: None,
             },
         );
-        Ok(get_stream_id.to_owned())
+        Ok(format!("{ms_part}-{seq_part}"))
     }
 
     fn set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
@@ -174,46 +175,45 @@ impl Database {
         };
         value
     }
-    fn get_stream_id(&mut self, stream_key: &String, stream_id: &String) -> Result<String, String> {
+    fn get_stream_id(
+        &mut self,
+        stream_key: &String,
+        stream_id: &String,
+    ) -> Result<(u128, usize), String> {
         if stream_id == "*" {
             // if ms_part is * then we need to dynamically generate stream_id
             let ms_part = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_millis();
-            return Ok(format!("{ms_part}-0"));
+            return Ok((ms_part, 0));
         }
         let Some((ms_part, seq_part)) = stream_id.split_once("-") else {
             debug!("ERR The ID specified in XADD must be greater than 0-0");
             return Err("ERR The ID specified in XADD must be greater than 0-0".to_string());
         };
 
-        let ms_part = ms_part.parse::<u64>().unwrap();
+        let ms_part = ms_part.parse::<u128>().unwrap();
         let default_seq_part = if ms_part == 0 { 1 } else { 0 };
         let db_stream = self
             .db
             .get(stream_key)
             .and_then(|stream_v| match &stream_v.value {
                 DbValueType::Stream(stream) => {
-                    let x = stream
+                    let stream_id = stream
                         .iter()
-                        .map(|x| x.stream_id.clone())
-                        .filter(|x| x.starts_with(&ms_part.to_string()))
-                        .collect::<Vec<String>>();
-                    let x = x.last().cloned();
-                    x
+                        .filter(|stream| stream.stream_id_ms_part == ms_part)
+                        .map(|stream| (stream.stream_id_ms_part, stream.stream_id_seq_part))
+                        .collect::<Vec<(u128, usize)>>();
+                    let last = stream_id.last().copied();
+                    last
                 }
                 _ => None,
             });
         let seq_part = match seq_part {
             "*" => match db_stream {
                 None => default_seq_part,
-                Some(stream_value) => {
-                    let (_, last_seq_part) = stream_value
-                        .split_once("-")
-                        .expect("This should always be possible to do");
-                    last_seq_part.parse::<usize>().unwrap() + 1
-                }
+                Some((_ms_part, last_seq_part)) => last_seq_part + 1,
             },
             _ => seq_part.parse::<usize>().unwrap(),
         };
@@ -225,27 +225,25 @@ impl Database {
                 _ => None,
             });
         let (last_ms, last_seq) = last
-            .and_then(|stream| stream.stream_id.split_once("-"))
-            .unwrap_or(("0", "0"));
+            .map(|stream| (stream.stream_id_ms_part, stream.stream_id_seq_part))
+            .unwrap_or((0, 0));
 
         if ms_part == 0 && seq_part <= 0 {
             debug!("ERR The ID specified in XADD must be greater than 0-0");
             return Err("ERR The ID specified in XADD must be greater than 0-0".to_string());
         }
-        if ms_part < last_ms.parse::<u64>().unwrap() {
+        if ms_part < last_ms {
             return Err(
                 "ERR The ID specified in XADD is equal or smaller than the target stream top item"
                     .to_string(),
             );
         }
-        if ms_part == last_ms.parse::<u64>().unwrap()
-            && seq_part <= last_seq.parse::<usize>().unwrap()
-        {
+        if ms_part == last_ms && seq_part <= last_seq {
             return Err(
                 "ERR The ID specified in XADD is equal or smaller than the target stream top item"
                     .to_string(),
             );
         }
-        return Ok(format!("{ms_part}-{seq_part}"));
+        return Ok((ms_part, seq_part));
     }
 }
