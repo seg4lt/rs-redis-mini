@@ -95,8 +95,16 @@ impl Database {
         start: String,
         end: String,
     ) -> Vec<StreamDbValueType> {
-        let (start_ms, start_sq) = start.split_once("-").unwrap();
-        let (last_ms, last_sq) = end.split_once("-").unwrap();
+        let (start_ms, start_sq) = if start == "-" {
+            ("0", "0")
+        } else {
+            start.split_once("-").unwrap()
+        };
+        let (last_ms, last_sq) = if end == "+" {
+            ("999999999999999", "999999999")
+        } else {
+            end.split_once("-").unwrap()
+        };
         let start_ms = start_ms.parse::<u128>().unwrap_or(0);
         let end_ms = last_ms.parse::<u128>().unwrap_or(0);
         let start_sq = start_sq.parse::<usize>().unwrap_or(0);
