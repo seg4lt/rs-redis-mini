@@ -83,6 +83,15 @@ impl Database {
                         let value = db.get_stream_range(&stream_key, start, end);
                         let _ = resp.send(value);
                     }
+                    XRead {
+                        resp,
+                        stream_key,
+                        stream_id,
+                    } => {
+                        last_command_was_set = false;
+                        let value = db.get_stream_range(&stream_key, stream_id, "+".to_string());
+                        let _ = resp.send(value);
+                    }
                 }
             }
         });

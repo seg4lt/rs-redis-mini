@@ -50,6 +50,10 @@ pub enum ServerCommand {
         start: String,
         end: String,
     },
+    XRead {
+        stream_key: String,
+        stream_id: String,
+    },
     CustomNewLine,
     ExitConn,
 }
@@ -87,9 +91,30 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "TYPE" => parse_type_cmd(&items[1..]),
         "XADD" => parse_xadd_cmd(&items[1..]),
         "XRANGE" => parse_xrange_cmd(&items[1..]),
+        "XREAD" => parse_xread_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
 }
+
+fn parse_xread_cmd(items: &[RESPType]) -> R {
+    let Some(RESPType::BulkString(typez)) = items.get(0) else {
+        bail!(fdbg!("XREAD must have type"));
+    };
+    if typez.to_lowercase() != "streams" {
+        bail!(fdbg!("XREAD must have type 'streams'"))
+    }
+    let Some(RESPType::BulkString(key)) = items.get(1) else {
+        bail!(fdbg!("XREAD must have key"));
+    };
+    let Some(RESPType::BulkString(stream_id)) = items.get(2) else {
+        bail!(fdbg!("XREAD must have stream_id"));
+    };
+    Ok(ServerCommand::XRead {
+        stream_key: key.to_string(),
+        stream_id: stream_id.to_string(),
+    })
+}
+
 fn parse_xrange_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(stream_key)) = items.get(0) else {
         bail!(fdbg!("XRANGE must have stream_key"));

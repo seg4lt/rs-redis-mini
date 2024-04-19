@@ -169,8 +169,55 @@ impl ServerCommand {
                 writer.flush().await?;
             }
             XRange { .. } => self.process_xrange_cmd(writer).await?,
+            XRead { .. } => self.process_xread_cmd(writer).await?,
             CustomNewLine | ExitConn => {}
         };
+        Ok(())
+    }
+
+    async fn process_xread_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+        let XRead {
+            stream_key,
+            stream_id,
+        } = self
+        else {
+            bail!("Not a xread cmd");
+        };
+
+        let (tx, rx) = oneshot::channel::<Vec<StreamDbValueType>>();
+        Database::emit(DatabaseEvent::XRead {
+            resp: tx,
+            stream_key: stream_key.clone(),
+            stream_id: stream_id.clone(),
+        })
+        .await?;
+
+        let db_value = rx.await?;
+        let mut map: BTreeMap<String, StreamDbValueType> = BTreeMap::new();
+        db_value.into_iter().for_each(|item| {
+            map.insert(
+                format!("{}-{}", item.stream_id_ms_part, item.stream_id_seq_part),
+                item,
+            );
+        });
+        let mut outer_vec = vec![];
+        map.into_iter().for_each(|(key, value)| {
+            let resp = RESPType::Array(vec![
+                RESPType::BulkString(key),
+                RESPType::Array(vec![
+                    RESPType::BulkString(value.key),
+                    RESPType::BulkString(value.value),
+                ]),
+            ]);
+            outer_vec.push(resp);
+        });
+        let final_resp = RESPType::Array(vec![RESPType::Array(vec![
+            RESPType::BulkString(stream_key.clone()),
+            RESPType::Array(outer_vec),
+        ])]);
+        debug!("Final response: {:?}", final_resp);
+        writer.write_all(&final_resp.as_bytes()).await?;
+        writer.flush().await?;
         Ok(())
     }
 
