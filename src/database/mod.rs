@@ -97,8 +97,8 @@ impl Database {
     ) -> Vec<StreamDbValueType> {
         let (start_ms, start_sq) = start.split_once("-").unwrap();
         let (last_ms, last_sq) = end.split_once("-").unwrap();
-        let start_ms = start_ms.parse::<u128>().unwrap();
-        let end_ms = last_ms.parse::<u128>().unwrap();
+        let start_ms = start_ms.parse::<u128>().unwrap_or(0);
+        let end_ms = last_ms.parse::<u128>().unwrap_or(0);
         let start_sq = start_sq.parse::<usize>().unwrap_or(0);
         let end_sq = last_sq.parse::<usize>().unwrap_or(9999999);
         debug!(
@@ -160,6 +160,7 @@ impl Database {
         let (ms_part, seq_part) = self.get_stream_id(stream_key, stream_id)?;
         match self.db.get_mut(stream_key) {
             None => {
+                // Need to refactor so this duplicate code is used only once.
                 self.db.insert(
                     stream_key.to_owned(),
                     DatabaseValue {
