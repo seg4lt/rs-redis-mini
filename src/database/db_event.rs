@@ -28,6 +28,12 @@ pub enum DatabaseEvent {
         key: String,
         value: String,
     },
+    XRange {
+        resp: oneshot::Sender<Vec<StreamDbValueType>>,
+        stream_key: String,
+        start: String,
+        end: String,
+    },
     WasLastCommandSet {
         resp: oneshot::Sender<bool>,
     },
@@ -42,6 +48,7 @@ pub enum DbValueType {
     Stream(Vec<StreamDbValueType>),
 }
 
+#[derive(Clone, Debug)]
 pub struct StreamDbValueType {
     pub stream_id_ms_part: u128,
     pub stream_id_seq_part: usize,

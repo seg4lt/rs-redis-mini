@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::bail;
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
@@ -7,7 +7,10 @@ use tracing::debug;
 use crate::{
     app_config::AppConfig,
     cmd_parser::server_command::ServerCommand,
-    database::{db_event::DatabaseEvent, Database},
+    database::{
+        db_event::{DatabaseEvent, StreamDbValueType},
+        Database,
+    },
     replication::ReplicationEvent,
     resp_type::RESPType,
     LINE_ENDING,
@@ -165,8 +168,53 @@ impl ServerCommand {
                 writer.write_all(&resp.as_bytes()).await?;
                 writer.flush().await?;
             }
+            XRange { .. } => self.process_xrange_cmd(writer).await?,
             CustomNewLine | ExitConn => {}
         };
+        Ok(())
+    }
+
+    async fn process_xrange_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+        let XRange {
+            stream_key,
+            start,
+            end,
+        } = self
+        else {
+            bail!("Not a xrange cmd");
+        };
+        let (tx, rx) = oneshot::channel::<Vec<StreamDbValueType>>();
+        Database::emit(DatabaseEvent::XRange {
+            resp: tx,
+            stream_key: stream_key.clone(),
+            start: start.clone(),
+            end: end.clone(),
+        })
+        .await?;
+
+        let db_value = rx.await?;
+        let mut map: BTreeMap<String, StreamDbValueType> = BTreeMap::new();
+        db_value.into_iter().for_each(|item| {
+            map.insert(
+                format!("{}-{}", item.stream_id_ms_part, item.stream_id_seq_part),
+                item,
+            );
+        });
+        let mut outer_vec = vec![];
+        map.into_iter().for_each(|(key, value)| {
+            let resp = RESPType::Array(vec![
+                RESPType::BulkString(key),
+                RESPType::Array(vec![
+                    RESPType::BulkString(value.key),
+                    RESPType::BulkString(value.value),
+                ]),
+            ]);
+            outer_vec.push(resp);
+        });
+        let final_resp = RESPType::Array(outer_vec);
+        debug!("Final response: {:?}", final_resp);
+        writer.write_all(&final_resp.as_bytes()).await?;
+        writer.flush().await?;
         Ok(())
     }
 

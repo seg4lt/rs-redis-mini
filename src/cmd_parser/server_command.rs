@@ -45,6 +45,11 @@ pub enum ServerCommand {
         key: String,
         value: String,
     },
+    XRange {
+        stream_key: String,
+        start: String,
+        end: String,
+    },
     CustomNewLine,
     ExitConn,
 }
@@ -81,8 +86,25 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "KEYS" => parse_keys_cmd(&items[1..]),
         "TYPE" => parse_type_cmd(&items[1..]),
         "XADD" => parse_xadd_cmd(&items[1..]),
+        "XRANGE" => parse_xrange_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
+}
+fn parse_xrange_cmd(items: &[RESPType]) -> R {
+    let Some(RESPType::BulkString(stream_key)) = items.get(0) else {
+        bail!(fdbg!("XRANGE must have stream_key"));
+    };
+    let Some(RESPType::BulkString(start)) = items.get(1) else {
+        bail!(fdbg!("XRANGE must have start"));
+    };
+    let Some(RESPType::BulkString(end)) = items.get(2) else {
+        bail!(fdbg!("XRANGE must have end"));
+    };
+    Ok(ServerCommand::XRange {
+        stream_key: stream_key.to_string(),
+        start: start.to_string(),
+        end: end.to_string(),
+    })
 }
 
 fn parse_xadd_cmd(items: &[RESPType]) -> R {

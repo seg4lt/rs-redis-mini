@@ -73,10 +73,67 @@ impl Database {
                             .expect("Unable to send stream key back to caller");
                         last_command_was_set = true;
                     }
+                    XRange {
+                        resp,
+                        stream_key,
+                        start,
+                        end,
+                    } => {
+                        last_command_was_set = false;
+                        let value = db.get_stream_range(&stream_key, start, end);
+                        let _ = resp.send(value);
+                    }
                 }
             }
         });
         db_event_listener
+    }
+
+    fn get_stream_range(
+        &self,
+        stream_key: &String,
+        start: String,
+        end: String,
+    ) -> Vec<StreamDbValueType> {
+        let (start_ms, start_sq) = start.split_once("-").unwrap();
+        let (last_ms, last_sq) = end.split_once("-").unwrap();
+        let start_ms = start_ms.parse::<u128>().unwrap();
+        let end_ms = last_ms.parse::<u128>().unwrap();
+        let start_sq = start_sq.parse::<usize>().unwrap_or(0);
+        let end_sq = last_sq.parse::<usize>().unwrap_or(9999999);
+        debug!(
+            "start_ms {} start_sq {} end_ms {} end_sq {}",
+            start_ms, start_sq, end_ms, end_sq
+        );
+        match self.db.get(stream_key) {
+            None => {
+                return vec![];
+            }
+            Some(value) => {
+                let DbValueType::Stream(stream) = &value.value else {
+                    return vec![];
+                };
+                let value = stream
+                    .iter()
+                    .filter(|value| {
+                        debug!(
+                            "value.stream_id_ms_part {} start_ms {} end_ms {}",
+                            value.stream_id_ms_part, start_ms, end_ms
+                        );
+                        value.stream_id_ms_part >= start_ms && value.stream_id_ms_part <= end_ms
+                    })
+                    .filter(|value| {
+                        debug!(
+                            "value.stream_id_seq_part {} start_sq {} end_sq {}",
+                            value.stream_id_seq_part, start_sq, end_sq
+                        );
+                        value.stream_id_seq_part >= start_sq && value.stream_id_seq_part <= end_sq
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                return value;
+            }
+        }
     }
 
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
@@ -101,18 +158,47 @@ impl Database {
     ) -> Result<String, String> {
         info!("Setting stream: {} with value: {}", stream_key, value);
         let (ms_part, seq_part) = self.get_stream_id(stream_key, stream_id)?;
-        self.db.insert(
-            stream_key.to_owned(),
-            DatabaseValue {
-                value: DbValueType::Stream(vec![StreamDbValueType {
-                    stream_id_ms_part: ms_part,
-                    stream_id_seq_part: seq_part,
-                    key: key.to_owned(),
-                    value: value.to_owned(),
-                }]),
-                exp_time: None,
+        match self.db.get_mut(stream_key) {
+            None => {
+                self.db.insert(
+                    stream_key.to_owned(),
+                    DatabaseValue {
+                        value: DbValueType::Stream(vec![StreamDbValueType {
+                            stream_id_ms_part: ms_part,
+                            stream_id_seq_part: seq_part,
+                            key: key.to_owned(),
+                            value: value.to_owned(),
+                        }]),
+                        exp_time: None,
+                    },
+                );
+            }
+            Some(db_value) => match db_value.value {
+                DbValueType::Stream(ref mut stream) => {
+                    stream.push(StreamDbValueType {
+                        stream_id_ms_part: ms_part,
+                        stream_id_seq_part: seq_part,
+                        key: key.to_owned(),
+                        value: value.to_owned(),
+                    });
+                }
+                _ => {
+                    self.db.insert(
+                        stream_key.to_owned(),
+                        DatabaseValue {
+                            value: DbValueType::Stream(vec![StreamDbValueType {
+                                stream_id_ms_part: ms_part,
+                                stream_id_seq_part: seq_part,
+                                key: key.to_owned(),
+                                value: value.to_owned(),
+                            }]),
+                            exp_time: None,
+                        },
+                    );
+                }
             },
-        );
+        }
+
         Ok(format!("{ms_part}-{seq_part}"))
     }
 
