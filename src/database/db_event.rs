@@ -35,9 +35,8 @@ pub enum DatabaseEvent {
         end: String,
     },
     XRead {
-        resp: oneshot::Sender<Vec<StreamDbValueType>>,
-        stream_key: String,
-        stream_id: String,
+        resp: oneshot::Sender<Vec<(String, Vec<StreamDbValueType>)>>,
+        filters: Vec<(String, String)>,
     },
     WasLastCommandSet {
         resp: oneshot::Sender<bool>,

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::bail;
+use tracing::debug;
 
 use crate::{fdbg, resp_type::RESPType};
 
@@ -50,10 +51,7 @@ pub enum ServerCommand {
         start: String,
         end: String,
     },
-    XRead {
-        stream_key: String,
-        stream_id: String,
-    },
+    XRead(Vec<(String, String)>),
     CustomNewLine,
     ExitConn,
 }
@@ -103,16 +101,21 @@ fn parse_xread_cmd(items: &[RESPType]) -> R {
     if typez.to_lowercase() != "streams" {
         bail!(fdbg!("XREAD must have type 'streams'"))
     }
-    let Some(RESPType::BulkString(key)) = items.get(1) else {
-        bail!(fdbg!("XREAD must have key"));
-    };
-    let Some(RESPType::BulkString(stream_id)) = items.get(2) else {
-        bail!(fdbg!("XREAD must have stream_id"));
-    };
-    Ok(ServerCommand::XRead {
-        stream_key: key.to_string(),
-        stream_id: stream_id.to_string(),
-    })
+
+    let items = &items[1..];
+    let len = items.len() / 2;
+    let mut filter: Vec<(String, String)> = Vec::with_capacity(len);
+    for i in 0..len {
+        let RESPType::BulkString(key) = items[i].clone() else {
+            bail!(fdbg!("XREAD must have key"));
+        };
+        let RESPType::BulkString(stream_id) = items[i + len].clone() else {
+            bail!(fdbg!("XREAD must have stream_id"));
+        };
+        filter.push((key.clone(), stream_id.clone()));
+    }
+    debug!(?filter, "This is the parsed filter");
+    Ok(ServerCommand::XRead(filter))
 }
 
 fn parse_xrange_cmd(items: &[RESPType]) -> R {

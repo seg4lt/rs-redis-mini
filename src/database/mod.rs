@@ -83,14 +83,17 @@ impl Database {
                         let value = db.get_stream_range(&stream_key, start, end);
                         let _ = resp.send(value);
                     }
-                    XRead {
-                        resp,
-                        stream_key,
-                        stream_id,
-                    } => {
+                    XRead { resp, filters } => {
                         last_command_was_set = false;
-                        let value = db.get_stream_range(&stream_key, stream_id, "+".to_string());
-                        let _ = resp.send(value);
+                        // Note: need to update this and get_stream_range is not exclusive
+                        let mut result: Vec<(String, Vec<StreamDbValueType>)> = vec![];
+
+                        filters.iter().for_each(|(stream_key, stream_id)| {
+                            let value =
+                                db.get_stream_range(stream_key, stream_id.clone(), "+".to_string());
+                            result.push((stream_key.clone(), value));
+                        });
+                        let _ = resp.send(result);
                     }
                 }
             }
@@ -118,10 +121,6 @@ impl Database {
         let end_ms = last_ms.parse::<u128>().unwrap_or(0);
         let start_sq = start_sq.parse::<usize>().unwrap_or(0);
         let end_sq = last_sq.parse::<usize>().unwrap_or(9999999);
-        debug!(
-            "start_ms {} start_sq {} end_ms {} end_sq {}",
-            start_ms, start_sq, end_ms, end_sq
-        );
         match self.db.get(stream_key) {
             None => {
                 return vec![];
@@ -133,17 +132,9 @@ impl Database {
                 let value = stream
                     .iter()
                     .filter(|value| {
-                        debug!(
-                            "value.stream_id_ms_part {} start_ms {} end_ms {}",
-                            value.stream_id_ms_part, start_ms, end_ms
-                        );
                         value.stream_id_ms_part >= start_ms && value.stream_id_ms_part <= end_ms
                     })
                     .filter(|value| {
-                        debug!(
-                            "value.stream_id_seq_part {} start_sq {} end_sq {}",
-                            value.stream_id_seq_part, start_sq, end_sq
-                        );
                         value.stream_id_seq_part >= start_sq && value.stream_id_seq_part <= end_sq
                     })
                     .cloned()
