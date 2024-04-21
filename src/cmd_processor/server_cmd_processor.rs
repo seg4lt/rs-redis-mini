@@ -182,16 +182,36 @@ impl ServerCommand {
         let XRead(filters, block_ms) = self else {
             bail!("Not a xread cmd");
         };
-        if let Some(ms) = block_ms.clone().take() {
-            debug!("Blocking for {} ms", ms);
-            // let start = Instant::now();
-            // while start.elapsed() < Duration::from_millis(ms * 2) {
-            //     continue;
-            // }
-            tokio::time::sleep(Duration::from_millis(ms)).await;
-            debug!("Blocking done")
-        }
 
+        let resp = match block_ms {
+            None => self.internal_process_xread_cmd(filters).await.unwrap(),
+            Some(ms) => match ms {
+                0 => {
+                    let mut resp = RESPType::NullBulkString;
+                    while let RESPType::NullBulkString = resp {
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
+                        resp = self.internal_process_xread_cmd(filters).await.unwrap()
+                    }
+                    resp
+                }
+                ms => {
+                    tokio::time::sleep(Duration::from_millis(*ms)).await;
+                    self.internal_process_xread_cmd(filters).await.unwrap()
+                }
+            },
+        };
+        debug!("Final response: {:?}", resp);
+        let str = String::from_utf8(resp.as_bytes()).unwrap();
+        debug!(?str, "Final String");
+        writer.write_all(&resp.as_bytes()).await?;
+        writer.flush().await?;
+        Ok(())
+    }
+
+    async fn internal_process_xread_cmd(
+        &self,
+        filters: &Vec<(String, String)>,
+    ) -> anyhow::Result<RESPType> {
         let (tx, rx) = oneshot::channel::<Vec<(String, Vec<StreamDbValueType>)>>();
         Database::emit(DatabaseEvent::XRead {
             resp: tx,
@@ -224,11 +244,8 @@ impl ServerCommand {
                     inner_arr_value.push(RESPType::Array(vec![inner_resp]));
                 });
 
-                // if got_value {
-                // inner_arr_value.push(RESPType::Array(vec![]));
                 let outer_resp = RESPType::Array(inner_arr_value);
                 outer_arr_value.push(outer_resp);
-                // }
             });
 
         let resp = if got_value {
@@ -236,12 +253,7 @@ impl ServerCommand {
         } else {
             RESPType::NullBulkString
         };
-        debug!("Final response: {:?}", resp);
-        let str = String::from_utf8(resp.as_bytes()).unwrap();
-        debug!(?str, "Final String");
-        writer.write_all(&resp.as_bytes()).await?;
-        writer.flush().await?;
-        Ok(())
+        Ok(resp)
     }
 
     async fn process_xrange_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
