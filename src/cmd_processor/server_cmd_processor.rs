@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 use anyhow::bail;
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
@@ -176,16 +179,22 @@ impl ServerCommand {
     }
 
     async fn process_xread_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
-        let XRead(filters) = self else {
+        let XRead(filters, block_ms) = self else {
             bail!("Not a xread cmd");
         };
+        if let Some(ms) = block_ms.clone().take() {
+            debug!("Blocking for {} ms", ms);
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_millis(ms) {
+                continue;
+            }
+            debug!("Blocking done")
+        }
 
         let (tx, rx) = oneshot::channel::<Vec<(String, Vec<StreamDbValueType>)>>();
         Database::emit(DatabaseEvent::XRead {
             resp: tx,
             filters: filters.clone(),
-            // stream_key: stream_key.clone(),
-            // stream_id: stream_id.clone(),
         })
         .await?;
 
@@ -223,34 +232,7 @@ impl ServerCommand {
         debug!(?str, "Final String");
         writer.write_all(&resp.as_bytes()).await?;
         writer.flush().await?;
-        todo!();
-
-        // let mut map: BTreeMap<String, StreamDbValueType> = BTreeMap::new();
-        // db_value.into_iter().for_each(|item| {
-        //     map.insert(
-        //         format!("{}-{}", item.stream_id_ms_part, item.stream_id_seq_part),
-        //         item,
-        //     );
-        // });
-        // let mut outer_vec = vec![];
-        // map.into_iter().for_each(|(key, value)| {
-        //     let resp = RESPType::Array(vec![
-        //         RESPType::BulkString(key),
-        //         RESPType::Array(vec![
-        //             RESPType::BulkString(value.key),
-        //             RESPType::BulkString(value.value),
-        //         ]),
-        //     ]);
-        //     outer_vec.push(resp);
-        // });
-        // let final_resp = RESPType::Array(vec![RESPType::Array(vec![
-        //     RESPType::BulkString(stream_key.clone()),
-        //     RESPType::Array(outer_vec),
-        // ])]);
-        // debug!("Final response: {:?}", final_resp);
-        // writer.write_all(&final_resp.as_bytes()).await?;
-        // writer.flush().await?;
-        // Ok(())
+        Ok(())
     }
 
     async fn process_xrange_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {

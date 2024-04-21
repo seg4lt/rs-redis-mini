@@ -30,6 +30,5 @@ async fn main() -> anyhow::Result<()> {
     ReplicationEvent::setup();
     Slave::setup().await?;
     Server::start().await?;
-
     Ok(())
 }

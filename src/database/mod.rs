@@ -71,6 +71,7 @@ impl Database {
                         let r = db.set_stream(&stream_key, &stream_id, &key, &value);
                         resp.send(r)
                             .expect("Unable to send stream key back to caller");
+                        debug!(?stream_key, ?stream_id, ?key, ?value, "XAdd -- ");
                         last_command_was_set = true;
                     }
                     XRange {
@@ -89,8 +90,21 @@ impl Database {
                         let mut result: Vec<(String, Vec<StreamDbValueType>)> = vec![];
 
                         filters.iter().for_each(|(stream_key, stream_id)| {
-                            let value =
-                                db.get_stream_range(stream_key, stream_id.clone(), "+".to_string());
+                            let (ms, sq) = stream_id.split_once("-").unwrap();
+                            let mut seq = sq.parse::<usize>().unwrap();
+                            seq += 1;
+                            let new_stream_id = format!("{}-{}", ms, seq.to_string());
+                            debug!(
+                                ?stream_key,
+                                stream_id,
+                                ?new_stream_id,
+                                "Getting stream range"
+                            );
+                            let value = db.get_stream_range(
+                                stream_key,
+                                new_stream_id.clone(),
+                                "+".to_string(),
+                            );
                             result.push((stream_key.clone(), value));
                         });
                         let _ = resp.send(result);

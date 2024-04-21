@@ -51,7 +51,7 @@ pub enum ServerCommand {
         start: String,
         end: String,
     },
-    XRead(Vec<(String, String)>),
+    XRead(Vec<(String, String)>, Option<u64>),
     CustomNewLine,
     ExitConn,
 }
@@ -98,11 +98,31 @@ fn parse_xread_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(typez)) = items.get(0) else {
         bail!(fdbg!("XREAD must have type"));
     };
-    if typez.to_lowercase() != "streams" {
-        bail!(fdbg!("XREAD must have type 'streams'"))
+
+    let mut block_ms: Option<u64> = None;
+    let consumed;
+
+    match typez.to_lowercase().as_str() {
+        "block" => {
+            let Some(RESPType::BulkString(block)) = items.get(1) else {
+                bail!(fdbg!("XREAD must have block"));
+            };
+            block_ms = Some(block.parse::<u64>()?);
+            let Some(RESPType::BulkString(typez)) = items.get(2) else {
+                bail!(fdbg!("XREAD must have type"));
+            };
+            if typez.to_lowercase() != "streams" {
+                bail!(fdbg!("XREAD must have type 'streams'"))
+            }
+            consumed = 3;
+        }
+        "streams" => {
+            consumed = 1;
+        }
+        _ => bail!(fdbg!("XREAD must have type 'streams' or 'block'")),
     }
 
-    let items = &items[1..];
+    let items = &items[consumed..];
     let len = items.len() / 2;
     let mut filter: Vec<(String, String)> = Vec::with_capacity(len);
     for i in 0..len {
@@ -114,8 +134,8 @@ fn parse_xread_cmd(items: &[RESPType]) -> R {
         };
         filter.push((key.clone(), stream_id.clone()));
     }
-    debug!(?filter, "This is the parsed filter");
-    Ok(ServerCommand::XRead(filter))
+    debug!(?filter, ?block_ms, "This is the parsed filter");
+    Ok(ServerCommand::XRead(filter, block_ms))
 }
 
 fn parse_xrange_cmd(items: &[RESPType]) -> R {
