@@ -184,10 +184,11 @@ impl ServerCommand {
         };
         if let Some(ms) = block_ms.clone().take() {
             debug!("Blocking for {} ms", ms);
-            let start = Instant::now();
-            while start.elapsed() < Duration::from_millis(ms) {
-                continue;
-            }
+            // let start = Instant::now();
+            // while start.elapsed() < Duration::from_millis(ms * 2) {
+            //     continue;
+            // }
+            tokio::time::sleep(Duration::from_millis(ms)).await;
             debug!("Blocking done")
         }
 
@@ -201,6 +202,7 @@ impl ServerCommand {
         let db_value = rx.await?;
         let mut outer_arr_value = vec![];
 
+        let mut got_value = false;
         db_value
             .into_iter()
             .for_each(|(stream_key, stream_values)| {
@@ -208,6 +210,7 @@ impl ServerCommand {
                 inner_arr_value.push(RESPType::BulkString(stream_key.clone()));
 
                 stream_values.into_iter().for_each(|item| {
+                    got_value = true;
                     let inner_resp = RESPType::Array(vec![
                         RESPType::BulkString(format!(
                             "{}-{}",
@@ -221,12 +224,18 @@ impl ServerCommand {
                     inner_arr_value.push(RESPType::Array(vec![inner_resp]));
                 });
 
+                // if got_value {
+                // inner_arr_value.push(RESPType::Array(vec![]));
                 let outer_resp = RESPType::Array(inner_arr_value);
-
                 outer_arr_value.push(outer_resp);
+                // }
             });
 
-        let resp = RESPType::Array(outer_arr_value);
+        let resp = if got_value {
+            RESPType::Array(outer_arr_value)
+        } else {
+            RESPType::NullBulkString
+        };
         debug!("Final response: {:?}", resp);
         let str = String::from_utf8(resp.as_bytes()).unwrap();
         debug!(?str, "Final String");
