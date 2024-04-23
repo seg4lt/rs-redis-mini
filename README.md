@@ -10,6 +10,7 @@ Also, instead of using `Arc<Mutex<T>>` everywhere, I decided to use `channels` t
 
 - [ ] Refactor the code so it is more redable.
   - At one point, I started to rush and focus only on making test pass 😅.
+- [ ] I am using clone everywhere, is there a better way to do this?
 
 ## Tips
 
