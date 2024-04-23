@@ -9,7 +9,6 @@ pub enum RESPType {
     Array(Vec<RESPType>),
     BulkString(String),
     NullBulkString,
-    Null,
     RDB(Vec<u8>),
     SimpleString(String),
     Integer(i64),
@@ -21,11 +20,6 @@ pub enum RESPType {
 impl RESPType {
     pub fn as_bytes(&self) -> Vec<u8> {
         match self {
-            Null => {
-                let mut result = vec![b'_'];
-                result.extend(LINE_ENDING.as_bytes().to_vec());
-                result
-            }
             Array(array) => {
                 let mut result = vec![b'*'];
                 result.extend(array.len().to_string().as_bytes());

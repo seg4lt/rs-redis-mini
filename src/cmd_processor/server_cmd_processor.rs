@@ -1,9 +1,6 @@
-use std::{
-    collections::BTreeMap,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, time::Duration};
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
 use tracing::debug;
 
@@ -14,6 +11,7 @@ use crate::{
         db_event::{DatabaseEvent, StreamDbValueType},
         Database,
     },
+    fdbg,
     replication::ReplicationEvent,
     resp_type::RESPType,
     LINE_ENDING,
@@ -183,20 +181,59 @@ impl ServerCommand {
             bail!("Not a xread cmd");
         };
 
+        let mut updated_filters: Vec<(String, String)> = vec![];
+        let mut iterable = filters.iter();
+        let mut item = iterable.next();
+        loop {
+            match item {
+                None => break,
+                Some((stream_key, stream_id)) => {
+                    debug!(?stream_key, ?stream_id, "Stream Key and Stream ID");
+                    let stream_id = if stream_id.as_str() == "$" {
+                        let (tx, rx) = oneshot::channel::<String>();
+                        Database::emit(DatabaseEvent::_GetLastStreamId {
+                            resp: tx,
+                            stream_key: stream_key.clone(),
+                        })
+                        .await?;
+                        let db_value = rx.await?;
+                        debug!(?db_value, "Last Stream ID");
+                        db_value
+                    } else {
+                        stream_id.clone()
+                    };
+                    updated_filters.push((stream_key.clone(), stream_id.clone()));
+                    item = iterable.next();
+                }
+            };
+        }
+
+        debug!(?updated_filters, "Updated filters");
+
         let resp = match block_ms {
-            None => self.internal_process_xread_cmd(filters).await.unwrap(),
+            None => self
+                .internal_process_xread_cmd(&updated_filters)
+                .await
+                .unwrap(),
             Some(ms) => match ms {
                 0 => {
                     let mut resp = RESPType::NullBulkString;
                     while let RESPType::NullBulkString = resp {
                         tokio::time::sleep(Duration::from_millis(1000)).await;
-                        resp = self.internal_process_xread_cmd(filters).await.unwrap()
+                        resp = self
+                            .internal_process_xread_cmd(&updated_filters)
+                            .await
+                            .unwrap()
                     }
                     resp
                 }
                 ms => {
+                    debug!(?ms, "Blocking for ms");
                     tokio::time::sleep(Duration::from_millis(*ms)).await;
-                    self.internal_process_xread_cmd(filters).await.unwrap()
+                    debug!(?ms, "Blocking for ms finished");
+                    self.internal_process_xread_cmd(&updated_filters)
+                        .await
+                        .unwrap()
                 }
             },
         };
@@ -217,9 +254,13 @@ impl ServerCommand {
             resp: tx,
             filters: filters.clone(),
         })
-        .await?;
+        .await
+        .context(fdbg!("Somethign wrong when sending read event"))?;
 
-        let db_value = rx.await?;
+        let db_value = rx.await.context(fdbg!("Unable to receive"))?;
+
+        debug!(?db_value, "DB Value");
+
         let mut outer_arr_value = vec![];
 
         let mut got_value = false;

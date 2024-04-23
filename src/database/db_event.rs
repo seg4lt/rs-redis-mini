@@ -41,6 +41,10 @@ pub enum DatabaseEvent {
     WasLastCommandSet {
         resp: oneshot::Sender<bool>,
     },
+    _GetLastStreamId {
+        resp: oneshot::Sender<String>,
+        stream_key: String,
+    },
 }
 pub struct DatabaseValue {
     pub value: DbValueType,

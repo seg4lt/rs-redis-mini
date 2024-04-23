@@ -84,10 +84,16 @@ impl Database {
                         let value = db.get_stream_range(&stream_key, start, end);
                         let _ = resp.send(value);
                     }
+                    _GetLastStreamId { resp, stream_key } => {
+                        last_command_was_set = false;
+                        let value = db.get_latest_stream_id(&stream_key);
+                        let _ = resp.send(value);
+                    }
                     XRead { resp, filters } => {
                         last_command_was_set = false;
-                        // Note: need to update this and get_stream_range is not exclusive
                         let mut result: Vec<(String, Vec<StreamDbValueType>)> = vec![];
+
+                        debug!(?filters, "THIS IS ON XREAD");
 
                         filters.iter().for_each(|(stream_key, stream_id)| {
                             let (ms, sq) = stream_id.split_once("-").unwrap();
@@ -96,7 +102,7 @@ impl Database {
                             let new_stream_id = format!("{}-{}", ms, seq.to_string());
                             debug!(
                                 ?stream_key,
-                                stream_id,
+                                ?stream_id,
                                 ?new_stream_id,
                                 "Getting stream range"
                             );
@@ -107,6 +113,7 @@ impl Database {
                             );
                             result.push((stream_key.clone(), value));
                         });
+                        debug!(?result, "XRead -- ");
                         let _ = resp.send(result);
                     }
                 }
@@ -253,6 +260,20 @@ impl Database {
                 DbValueType::Stream(_) => "stream",
             },
         }
+    }
+    fn get_latest_stream_id(&mut self, stream_key: &String) -> String {
+        let stream = self
+            .db
+            .get(stream_key)
+            .and_then(|stream_v| match &stream_v.value {
+                DbValueType::Stream(stream) => stream.last(),
+                _ => None,
+            });
+        let stream_id = match stream {
+            None => "0-0".to_string(),
+            Some(stream) => format!("{}-{}", stream.stream_id_ms_part, stream.stream_id_seq_part),
+        };
+        stream_id
     }
 
     fn get(&mut self, key: &String) -> Option<String> {
