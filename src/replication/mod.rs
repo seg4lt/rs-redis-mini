@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use tokio::sync::mpsc::Sender;
 use tokio::{net::TcpStream, sync::oneshot};
 
 use tokio::{io::AsyncWriteExt, sync::mpsc};
@@ -71,42 +72,49 @@ impl ReplicationEvent {
                     GetAck {
                         ack_wanted: min_ack,
                         resp,
-                    } => {
-                        let mut acks_received = 0;
-
-                        let req = RESPType::Array(vec![
-                            RESPType::BulkString("REPLCONF".to_string()),
-                            RESPType::BulkString("GETACK".to_string()),
-                            RESPType::BulkString("*".to_string()),
-                        ]);
-                        for (_, streams) in &mut streams_map {
-                            let (_reader, mut writer) = streams.split();
-                            debug!("Sending GET ACK TO slave");
-                            let _ = writer.write_all(&req.as_bytes()).await;
-                            writer.flush().await.unwrap();
-                            debug!("Writing to one slave");
-                            // let span =
-                            //     tracing::span!(tracing::Level::DEBUG, "READING ACK FROM CLIENT");
-                            // let _guard = span.enter();
-                            // debug!("Creating bufferred reader");
-                            // let mut reader = BufReader::new(reader);
-                            // let resp_type = RESPType::parse(&mut reader).await.unwrap();
-                            // debug!("RESP from slave - {:?}", resp_type);
-                            acks_received += 1;
-                            // debug!(
-                            //     "Acks received {:?} -- min_acks -- {}",
-                            //     acks_received, min_ack
-                            // );
-                            if acks_received >= min_ack {
-                                break;
-                            }
-                        }
-                        debug!("Respoding to the onshot channel");
-                        let _ = resp.send(acks_received);
-                    }
+                    } => get_ack(&mut streams_map, min_ack, resp).await.unwrap(),
                 }
             }
         });
         tx
     }
+}
+
+async fn get_ack(
+    streams_map: &mut HashMap<String, TcpStream>,
+    min_ack: usize,
+    resp: oneshot::Sender<usize>,
+) -> anyhow::Result<()> {
+    let mut acks_received = 0;
+
+    let req = RESPType::Array(vec![
+        RESPType::BulkString("REPLCONF".to_string()),
+        RESPType::BulkString("GETACK".to_string()),
+        RESPType::BulkString("*".to_string()),
+    ]);
+    for (_, streams) in streams_map {
+        let (_reader, mut writer) = streams.split();
+        debug!("Sending GET ACK TO slave");
+        let _ = writer.write_all(&req.as_bytes()).await;
+        writer.flush().await.unwrap();
+        debug!("Writing to one slave");
+        // let span =
+        //     tracing::span!(tracing::Level::DEBUG, "READING ACK FROM CLIENT");
+        // let _guard = span.enter();
+        // debug!("Creating bufferred reader");
+        // let mut reader = BufReader::new(reader);
+        // let resp_type = RESPType::parse(&mut reader).await.unwrap();
+        // debug!("RESP from slave - {:?}", resp_type);
+        acks_received += 1;
+        // debug!(
+        //     "Acks received {:?} -- min_acks -- {}",
+        //     acks_received, min_ack
+        // );
+        if acks_received >= min_ack {
+            break;
+        }
+    }
+    debug!("Respoding to the onshot channel");
+    let _ = resp.send(acks_received);
+    Ok(())
 }
