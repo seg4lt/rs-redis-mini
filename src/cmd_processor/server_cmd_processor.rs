@@ -1,7 +1,15 @@
-use std::{collections::BTreeMap, time::Duration};
+use core::time;
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 use anyhow::{bail, Context};
-use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf, sync::oneshot};
+use tokio::{
+    io::AsyncWriteExt,
+    net::tcp::WriteHalf,
+    sync::{mpsc, oneshot},
+};
 use tracing::debug;
 
 use crate::{
@@ -377,9 +385,10 @@ impl ServerCommand {
             return Ok(());
         }
 
-        let (replication_event_resp_emitter, replication_event_resp_listener) =
-            oneshot::channel::<usize>();
+        let (replication_event_resp_emitter, mut replication_event_resp_listener) =
+            mpsc::channel::<usize>(10);
         debug!("(inside of wait): Emitting ReplicationEvent::GetAck");
+
         ReplicationEvent::GetAck {
             ack_wanted: *ack_wanted,
             resp: replication_event_resp_emitter,
@@ -387,25 +396,30 @@ impl ServerCommand {
         .emit()
         .await?;
 
-        match tokio::time::timeout(
-            Duration::from_millis(*timeout_ms as u64),
-            replication_event_resp_listener,
-        )
-        .await
+        let start = Instant::now();
+        let mut acks_received = 0;
+
+        while start.elapsed() < Duration::from_millis(*timeout_ms as u64)
+            && acks_received < num_replicas
         {
-            Ok(Ok(value)) => {
-                let acks_received = value;
-                let resp_type = RESPType::Integer(acks_received as i64);
-                let xx = String::from_utf8(resp_type.as_bytes()).unwrap();
-                debug!("✅ What did I receive: {}", xx);
-                writer.write_all(&resp_type.as_bytes()).await?;
+            let value = &replication_event_resp_listener.try_recv();
+            match value {
+                Ok(_ack) => {
+                    debug!("!@#: GOT ACK");
+                    acks_received += 1;
+                }
+                Err(_) => {
+                    debug!("!@#: NO ACK");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
             }
-            _ => {
-                debug!("⏰ TIMEOUT or error");
-                let resp_type = RESPType::Integer(0);
-                writer.write_all(&resp_type.as_bytes()).await?;
-            }
-        };
+        }
+        let elapshed = start.elapsed();
+        debug!(?elapshed, ?acks_received, ?num_replicas, "Acks received");
+        let resp_type = RESPType::Integer(acks_received as i64);
+        debug!("Final response: {:?}", resp_type);
+        writer.write_all(&resp_type.as_bytes()).await?;
         Ok(())
     }
 }

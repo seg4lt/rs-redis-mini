@@ -1,11 +1,13 @@
+use std::borrow::BorrowMut;
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
-use tokio::sync::mpsc::Sender;
+use tokio::io::BufReader;
+use tokio::sync::Mutex;
 use tokio::{net::TcpStream, sync::oneshot};
 
 use tokio::{io::AsyncWriteExt, sync::mpsc};
-use tracing::debug;
 
 use crate::resp_type::RESPType;
 
@@ -28,7 +30,7 @@ pub enum ReplicationEvent {
     },
     GetAck {
         ack_wanted: usize,
-        resp: oneshot::Sender<usize>,
+        resp: mpsc::Sender<usize>,
     },
 }
 type ReplicationEventEmitter = mpsc::Sender<ReplicationEvent>;
@@ -44,12 +46,12 @@ impl ReplicationEvent {
         let (tx, mut rx) = mpsc::channel::<ReplicationEvent>(5);
         EMITTER.get_or_init(|| tx.clone());
         tokio::spawn(async move {
-            let mut streams_map: HashMap<String, TcpStream> = HashMap::new();
+            let mut streams_map: HashMap<String, Arc<Mutex<TcpStream>>> = HashMap::new();
             while let Some(cmd) = rx.recv().await {
                 match cmd {
                     SaveStream { host, port, stream } => {
                         let key = format!("{host}:{port}");
-                        streams_map.insert(key, stream);
+                        streams_map.insert(key, Arc::new(Mutex::new(stream)));
                     }
                     Set {
                         key,
@@ -61,9 +63,10 @@ impl ReplicationEvent {
                             RESPType::BulkString(key.clone()),
                             RESPType::BulkString(value.clone()),
                         ]);
-                        for (_, v) in &mut streams_map {
-                            let _ = v.write_all(&msg.as_bytes()).await;
-                            v.flush().await.unwrap();
+                        for (_, v) in streams_map.borrow_mut() {
+                            let mut stream = v.lock().await;
+                            let _ = stream.write_all(&msg.as_bytes()).await;
+                            stream.flush().await.unwrap();
                         }
                     }
                     GetNumOfReplicas { resp: recv_chan } => {
@@ -72,7 +75,7 @@ impl ReplicationEvent {
                     GetAck {
                         ack_wanted: min_ack,
                         resp,
-                    } => get_ack(&mut streams_map, min_ack, resp).await.unwrap(),
+                    } => get_ack(&streams_map, min_ack, resp).await.unwrap(),
                 }
             }
         });
@@ -81,40 +84,43 @@ impl ReplicationEvent {
 }
 
 async fn get_ack(
-    streams_map: &mut HashMap<String, TcpStream>,
+    streams_map: &HashMap<String, Arc<Mutex<TcpStream>>>,
     min_ack: usize,
-    resp: oneshot::Sender<usize>,
+    resp: mpsc::Sender<usize>,
 ) -> anyhow::Result<()> {
     let mut acks_received = 0;
 
-    let req = RESPType::Array(vec![
-        RESPType::BulkString("REPLCONF".to_string()),
-        RESPType::BulkString("GETACK".to_string()),
-        RESPType::BulkString("*".to_string()),
-    ]);
-    for (_, streams) in streams_map {
-        let (_reader, mut writer) = streams.split();
-        debug!("Sending GET ACK TO slave");
-        let _ = writer.write_all(&req.as_bytes()).await;
-        writer.flush().await.unwrap();
-        debug!("Writing to one slave");
-        // let span =
-        //     tracing::span!(tracing::Level::DEBUG, "READING ACK FROM CLIENT");
-        // let _guard = span.enter();
-        // debug!("Creating bufferred reader");
-        // let mut reader = BufReader::new(reader);
-        // let resp_type = RESPType::parse(&mut reader).await.unwrap();
-        // debug!("RESP from slave - {:?}", resp_type);
-        acks_received += 1;
-        // debug!(
-        //     "Acks received {:?} -- min_acks -- {}",
-        //     acks_received, min_ack
-        // );
-        if acks_received >= min_ack {
-            break;
-        }
+    for (_, stream) in streams_map {
+        let mut cl_stream = Arc::clone(stream);
+        let resp = resp.clone();
+        tokio::spawn(async move {
+            let req = RESPType::Array(vec![
+                RESPType::BulkString("REPLCONF".to_string()),
+                RESPType::BulkString("GETACK".to_string()),
+                RESPType::BulkString("*".to_string()),
+            ]);
+            let mut stream = cl_stream.borrow_mut().lock().await;
+            let (reader, mut writer) = stream.split();
+            let _ = writer.write_all(&req.as_bytes()).await;
+            writer.flush().await.unwrap();
+            let mut reader = BufReader::new(reader);
+
+            // Probably need a better way to cancel this task after get ack was received
+            match tokio::time::timeout(Duration::from_millis(100), RESPType::parse(&mut reader))
+                .await
+            {
+                // match RESPType::parse(&mut reader).await {
+                Ok(..) => {
+                    tracing::debug!("Got an ack");
+                    acks_received += 1;
+                    let _ = resp.send(1).await;
+                }
+                Err(..) => {
+                    tracing::debug!("No ack received")
+                }
+            }
+            tracing::debug!(?acks_received, ?min_ack, "Checking if we have enough acks");
+        });
     }
-    debug!("Respoding to the onshot channel");
-    let _ = resp.send(acks_received);
     Ok(())
 }
