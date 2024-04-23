@@ -1,35 +1,27 @@
 [![progress-banner](https://backend.codecrafters.io/progress/redis/a45bcf86-4269-43cb-8630-c494ce35d0f1)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
-This is a starting point for Rust solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
+# CodeCrafters Redis Challenge
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+Rust implementation of the Redis based on code crafters challenge. The goal of the project was to learn more about Rust and get better at the language.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+Also, instead of using `Arc<Mutex<T>>` everywhere, I decided to use `channels` to communicate between threads.
 
-# Passing the first stage
+## Next Steps
 
-The entry point for your Redis implementation is in `src/main.rs`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+- [ ] Refactor the code so it is more redable.
+  - At one point, I started to rush and focus only on making test pass 😅.
+
+## Tips
+
+Create a rdb file for testing
 
 ```sh
-git add .
-git commit -m "pass 1st stage" # any msg
-git push origin master
+Terminal #1> redis-server
+
+Terminal #2> redis-cli set mykey myval
+Terminal #2> redis-cli save
+
+Terminal #1:
+Press ctrl + c to shut down redis-server. You'll see dump.rdb created
+To inspect its contents you can use: hexdump -C dump.rdb
 ```
-
-That's all!
-
-# Stage 2 & beyond
-
-Note: This section is for stages 2 and beyond.
-
-1. Ensure you have `cargo (1.54)` installed locally
-1. Run `./spawn_redis_server.sh` to run your Redis server, which is implemented
-   in `src/main.rs`. This command compiles your Rust project, so it might be
-   slow the first time you run it. Subsequent runs will be fast.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
