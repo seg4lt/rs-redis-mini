@@ -88,15 +88,13 @@ impl AppConfig {
                     None => Err(anyhow!("Port number not provided"))?,
                 },
                 "--replicaof" => {
-                    let host = match args.next() {
-                        Some(host) => host,
-                        None => Err(anyhow!("replicaof host not provided"))?,
+                    let Some(replica_of) = args.next() else {
+                        Err(anyhow!("replicaof host and port not provided"))?
                     };
-                    let port = match args.next() {
-                        Some(port) => port,
-                        None => Err(anyhow!("replicaof port number not provided"))?,
-                    };
-                    AppConfig::ReplicaOf(host, port)
+                    let split = replica_of.split(" ").collect::<Vec<&str>>();
+                    let host = split.get(0).expect("host not provided");
+                    let port = split.get(1).expect("port not provided");
+                    AppConfig::ReplicaOf(host.to_string(), port.to_string())
                 }
                 "--dir" => {
                     let dir_name = match args.next() {
