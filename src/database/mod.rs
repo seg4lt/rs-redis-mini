@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -185,6 +185,25 @@ impl Database {
         };
         Database::emit(event).await?;
         Ok(listener.await?)
+    }
+
+    pub async fn xadd(
+        stream_key: &String,
+        stream_id: &String,
+        key: &String,
+        value: &String,
+    ) -> anyhow::Result<String, String> {
+        let (emitter, listener) = oneshot::channel::<Result<String, String>>();
+        Database::emit(DatabaseEvent::XAdd {
+            emitter,
+            stream_key: stream_key.clone(),
+            stream_id: stream_id.clone(),
+            key: key.clone(),
+            value: value.clone(),
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        listener.await.map_err(|e| e.to_string())?
     }
 
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {

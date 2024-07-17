@@ -134,16 +134,7 @@ impl ServerCommand {
                 key,
                 value,
             } => {
-                let (tx, rx) = oneshot::channel::<Result<String, String>>();
-                Database::emit(DatabaseEvent::XAdd {
-                    emitter: tx,
-                    stream_key: stream_key.clone(),
-                    stream_id: stream_id.clone(),
-                    key: key.clone(),
-                    value: value.clone(),
-                })
-                .await?;
-                let resp = match rx.await? {
+                let resp = match Database::xadd(stream_key, stream_id, key, value).await {
                     Ok(value) => RESPType::BulkString(value),
                     Err(err) => RESPType::Error(err),
                 };
