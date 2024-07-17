@@ -10,7 +10,7 @@ pub enum DatabaseEvent {
         flags: HashMap<String, String>,
     },
     Get {
-        resp: oneshot::Sender<Option<String>>,
+        resp_emitter: oneshot::Sender<Option<String>>,
         key: String,
     },
     Keys {

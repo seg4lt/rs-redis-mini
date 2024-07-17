@@ -6,7 +6,10 @@ use std::{
 
 use self::db_event::DatabaseEvent::*;
 use self::db_event::{DatabaseEvent, DatabaseValue, DbValueType, StreamDbValueType};
-use tokio::sync::mpsc::{self, channel};
+use tokio::sync::{
+    mpsc::{self, channel},
+    oneshot,
+};
 use tracing::{debug, info};
 
 pub(crate) mod db_event;
@@ -33,7 +36,10 @@ impl Database {
                         // TODO: Better way to set this command
                         last_command_was_set = true;
                     }
-                    Get { key, resp } => {
+                    Get {
+                        key,
+                        resp_emitter: resp,
+                    } => {
                         let value = db.get(&key);
                         resp.send(value)
                             .expect("Unable to send value back to caller");
@@ -133,6 +139,15 @@ impl Database {
             flags: flags.clone(),
         };
         Database::emit(set_event).await
+    }
+    pub async fn get_key(key: &String) -> anyhow::Result<Option<String>> {
+        let (resp_emitter, listener) = oneshot::channel::<Option<String>>();
+        let kv_cmd = DatabaseEvent::Get {
+            resp_emitter,
+            key: key.to_owned(),
+        };
+        Database::emit(kv_cmd).await?;
+        Ok(listener.await?)
     }
 
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {

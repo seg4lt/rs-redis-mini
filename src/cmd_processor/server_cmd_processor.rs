@@ -49,14 +49,7 @@ impl ServerCommand {
                 .await?;
             }
             Get { key } => {
-                let (replication_event_emitter, db_event_resp_listener) =
-                    oneshot::channel::<Option<String>>();
-                let kv_cmd = DatabaseEvent::Get {
-                    resp: replication_event_emitter,
-                    key: key.to_owned(),
-                };
-                Database::emit(kv_cmd).await?;
-                match db_event_resp_listener.await? {
+                match Database::get_key(&key).await? {
                     None => {
                         let resp_type = RESPType::NullBulkString;
                         writer.write_all(&resp_type.as_bytes()).await?;

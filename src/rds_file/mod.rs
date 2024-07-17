@@ -7,12 +7,7 @@ use tokio::{
 };
 use tracing::debug;
 
-use crate::{
-    app_config::AppConfig,
-    binary,
-    database::{db_event::DatabaseEvent, Database},
-    fdbg,
-};
+use crate::{app_config::AppConfig, binary, database::Database, fdbg};
 
 pub(crate) async fn parse_rdb_file() -> anyhow::Result<()> {
     let dir = AppConfig::get_rds_dir();
@@ -29,7 +24,6 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<()> {
         let op_code = read_bytes(&mut reader, 1)
             .await
             .context(fdbg!("Unable to read OpCode"))?;
-        // tracing::debug!("OpCode = {:x?}", &op_code[0]);
         match op_code[0] {
             0xFF => {
                 debug!("EOF file found");
@@ -83,21 +77,13 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<()> {
             // Not special character, Try to read the data
             _ => {
                 let (key, value) = read_key_value(&mut reader, op_code[0]).await?;
-                debug!("Key {key}, Value {value}");
-                let event = DatabaseEvent::Set {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                    flags: HashMap::new(),
-                };
-                Database::emit(event).await?;
+                Database::set_kv(&key, &value, &HashMap::new()).await?;
             }
         }
     }
     Ok(())
 }
 
-//  async fn read_key_value<R>(reader: &mut R, value_type: u8) -> anyhow::Result<(String, String)>
-// where R: AsyncBufRead + AsyncReadExt + Unpin {
 async fn read_key_value<R>(reader: &mut R, value_type: u8) -> anyhow::Result<(String, String)>
 where
     R: AsyncBufRead + AsyncReadExt + Unpin,
@@ -107,7 +93,6 @@ where
         0 => {
             let key = read_string_encoded_key(reader).await?;
             let value = read_string_encoded_key(reader).await?;
-            debug!("Key = {key}, Value = {value}");
             (key, value)
         }
         // Other encoding not imported yet
