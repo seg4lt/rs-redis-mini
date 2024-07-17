@@ -122,6 +122,27 @@ impl Database {
         db_event_listener
     }
 
+    pub async fn set_kv(
+        key: &String,
+        value: &String,
+        flags: &HashMap<String, String>,
+    ) -> anyhow::Result<()> {
+        let set_event = DatabaseEvent::Set {
+            key: key.clone(),
+            value: value.clone(),
+            flags: flags.clone(),
+        };
+        Database::emit(set_event).await
+    }
+
+    pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
+        let Some(emitter) = LISTENER.get() else {
+            panic!("DatabaseEventEmitter not initialized");
+        };
+        emitter.send(event).await?;
+        Ok(())
+    }
+
     fn get_stream_range(
         &self,
         stream_key: &String,
@@ -163,14 +184,6 @@ impl Database {
                 return value;
             }
         }
-    }
-
-    pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
-        let Some(emitter) = LISTENER.get() else {
-            panic!("DatabaseEventEmitter not initialized");
-        };
-        emitter.send(event).await?;
-        Ok(())
     }
 
     fn keys(&self) -> Vec<String> {
@@ -261,6 +274,7 @@ impl Database {
             },
         }
     }
+
     fn get_latest_stream_id(&mut self, stream_key: &String) -> String {
         let stream = self
             .db
@@ -305,6 +319,7 @@ impl Database {
         };
         value
     }
+
     fn get_stream_id(
         &mut self,
         stream_key: &String,

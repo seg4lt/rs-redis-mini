@@ -37,12 +37,7 @@ impl ServerCommand {
                 writer.write_all(&resp_type.as_bytes()).await?;
             }
             Set { key, value, flags } => {
-                let kv_cmd = DatabaseEvent::Set {
-                    key: key.clone(),
-                    value: value.clone(),
-                    flags: flags.clone(),
-                };
-                Database::emit(kv_cmd).await?;
+                Database::set_kv(key, value, flags).await?;
                 let resp_type = RESPType::SimpleString("OK".to_string());
                 writer.write_all(&resp_type.as_bytes()).await?;
                 ReplicationEvent::Set {

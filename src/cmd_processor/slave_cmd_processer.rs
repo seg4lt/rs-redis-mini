@@ -1,11 +1,7 @@
 use tokio::{io::AsyncWriteExt, net::tcp::WriteHalf};
 use tracing::debug;
 
-use crate::{
-    cmd_parser::slave_command::SlaveCommand,
-    database::{db_event::DatabaseEvent, Database},
-    resp_type::RESPType,
-};
+use crate::{cmd_parser::slave_command::SlaveCommand, database::Database, resp_type::RESPType};
 use SlaveCommand::*;
 
 impl SlaveCommand {
@@ -15,17 +11,8 @@ impl SlaveCommand {
         bytes_received: usize,
     ) -> anyhow::Result<()> {
         match self {
-            Ping => {
-                // not need to process
-            }
-            Set { key, value, flags } => {
-                let kv_cmd = DatabaseEvent::Set {
-                    key: key.clone(),
-                    value: value.clone(),
-                    flags: flags.clone(),
-                };
-                Database::emit(kv_cmd).await?;
-            }
+            Ping => (),
+            Set { key, value, flags } => Database::set_kv(key, value, flags).await?,
             ReplConf { .. } => {
                 let resp_type = RESPType::Array(vec![
                     RESPType::BulkString("REPLCONF".to_string()),

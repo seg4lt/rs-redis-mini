@@ -70,12 +70,7 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<()> {
                     let diff = exp_time - now_millis;
                     let mut map: HashMap<String, String> = HashMap::new();
                     map.insert("px".to_string(), diff.to_string());
-                    Database::emit(DatabaseEvent::Set {
-                        key: key.to_string(),
-                        value: value.to_string(),
-                        flags: map,
-                    })
-                    .await?;
+                    Database::set_kv(&key, &value, &map).await?;
                 }
             }
             0xFB => {
