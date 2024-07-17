@@ -123,13 +123,7 @@ impl ServerCommand {
                 writer.flush().await?;
             }
             Type(key) => {
-                let (tx, rx) = oneshot::channel::<String>();
-                Database::emit(DatabaseEvent::Type {
-                    emitter: tx,
-                    key: key.to_owned(),
-                })
-                .await?;
-                let value = rx.await?;
+                let value = Database::get_type(key).await?;
                 let resp = RESPType::SimpleString(value);
                 writer.write_all(&resp.as_bytes()).await?;
                 writer.flush().await?;

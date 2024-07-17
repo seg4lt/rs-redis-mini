@@ -64,7 +64,7 @@ impl Database {
                         last_command_was_set = false;
                     }
                     Type { emitter, key } => {
-                        let value = db.get_type(&key);
+                        let value = db._get_type(&key);
                         emitter
                             .send(value.to_string())
                             .expect("Unable to send type back to caller");
@@ -77,7 +77,7 @@ impl Database {
                         key,
                         value,
                     } => {
-                        let r = db.set_stream(&stream_key, &stream_id, &key, &value);
+                        let r = db._set_stream(&stream_key, &stream_id, &key, &value);
                         emitter
                             .send(r)
                             .expect("Unable to send stream key back to caller");
@@ -91,7 +91,7 @@ impl Database {
                         end,
                     } => {
                         last_command_was_set = false;
-                        let value = db.get_stream_range(&stream_key, start, end);
+                        let value = db._get_stream_range(&stream_key, start, end);
                         let _ = emitter.send(value);
                     }
                     _GetLastStreamId {
@@ -99,7 +99,7 @@ impl Database {
                         stream_key,
                     } => {
                         last_command_was_set = false;
-                        let value = db.get_latest_stream_id(&stream_key);
+                        let value = db._get_latest_stream_id(&stream_key);
                         let _ = emitter.send(value);
                     }
                     XRead { emitter, filters } => {
@@ -119,7 +119,7 @@ impl Database {
                                 ?new_stream_id,
                                 "Getting stream range"
                             );
-                            let value = db.get_stream_range(
+                            let value = db._get_stream_range(
                                 stream_key,
                                 new_stream_id.clone(),
                                 "+".to_string(),
@@ -158,12 +158,22 @@ impl Database {
     }
 
     pub async fn keys(flag: &String) -> anyhow::Result<Vec<String>> {
-        let (resp_emitter, listener) = oneshot::channel::<Vec<String>>();
+        let (emitter, listener) = oneshot::channel::<Vec<String>>();
         let keys_event = DatabaseEvent::Keys {
-            emitter: resp_emitter,
+            emitter,
             flag: flag.clone(),
         };
         Database::emit(keys_event).await?;
+        Ok(listener.await?)
+    }
+
+    pub async fn get_type(key: &String) -> anyhow::Result<String> {
+        let (emitter, listener) = oneshot::channel::<String>();
+        let type_event = DatabaseEvent::Type {
+            emitter,
+            key: key.clone(),
+        };
+        Database::emit(type_event).await?;
         Ok(listener.await?)
     }
 
@@ -177,7 +187,7 @@ impl Database {
 
     // Private Methods
 
-    fn get_stream_range(
+    fn _get_stream_range(
         &self,
         stream_key: &String,
         start: String,
@@ -225,7 +235,7 @@ impl Database {
         value
     }
 
-    fn set_stream(
+    fn _set_stream(
         &mut self,
         stream_key: &String,
         stream_id: &String,
@@ -233,7 +243,7 @@ impl Database {
         value: &String,
     ) -> Result<String, String> {
         info!("Setting stream: {} with value: {}", stream_key, value);
-        let (ms_part, seq_part) = self.get_stream_id(stream_key, stream_id)?;
+        let (ms_part, seq_part) = self._get_stream_id(stream_key, stream_id)?;
         match self.db.get_mut(stream_key) {
             None => {
                 // Need to refactor so this duplicate code is used only once.
@@ -298,7 +308,7 @@ impl Database {
         );
     }
 
-    fn get_type(&mut self, key: &String) -> &str {
+    fn _get_type(&mut self, key: &String) -> &str {
         let value = self.db.get(key);
         match value {
             None => "none",
@@ -309,7 +319,7 @@ impl Database {
         }
     }
 
-    fn get_latest_stream_id(&mut self, stream_key: &String) -> String {
+    fn _get_latest_stream_id(&mut self, stream_key: &String) -> String {
         let stream = self
             .db
             .get(stream_key)
@@ -354,7 +364,7 @@ impl Database {
         value
     }
 
-    fn get_stream_id(
+    fn _get_stream_id(
         &mut self,
         stream_key: &String,
         stream_id: &String,
