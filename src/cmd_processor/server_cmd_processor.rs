@@ -169,19 +169,9 @@ impl ServerCommand {
             match item {
                 None => break,
                 Some((stream_key, stream_id)) => {
-                    debug!(?stream_key, ?stream_id, "Stream Key and Stream ID");
-                    let stream_id = if stream_id.as_str() == "$" {
-                        let (tx, rx) = oneshot::channel::<String>();
-                        Database::emit(DatabaseEvent::_GetLastStreamId {
-                            emitter: tx,
-                            stream_key: stream_key.clone(),
-                        })
-                        .await?;
-                        let db_value = rx.await?;
-                        debug!(?db_value, "Last Stream ID");
-                        db_value
-                    } else {
-                        stream_id.clone()
+                    let stream_id = match stream_id.as_str() == "$" {
+                        true => Database::get_last_stream_id(stream_key).await?,
+                        false => stream_id.clone(),
                     };
                     updated_filters.push((stream_key.clone(), stream_id.clone()));
                     item = iterable.next();

@@ -177,6 +177,16 @@ impl Database {
         Ok(listener.await?)
     }
 
+    pub async fn get_last_stream_id(stream_key: &String) -> anyhow::Result<String> {
+        let (emitter, listener) = oneshot::channel::<String>();
+        let event = DatabaseEvent::_GetLastStreamId {
+            emitter,
+            stream_key: stream_key.clone(),
+        };
+        Database::emit(event).await?;
+        Ok(listener.await?)
+    }
+
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
         let Some(emitter) = LISTENER.get() else {
             panic!("DatabaseEventEmitter not initialized");
