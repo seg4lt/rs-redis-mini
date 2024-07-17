@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, OnceLock},
+    sync::OnceLock,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -24,113 +24,10 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> DatabaseEventEmitter {
-        let (db_event_listener, mut db_event_receiver) = channel::<DatabaseEvent>(100);
+        let (db_event_listener, db_event_receiver) = channel::<DatabaseEvent>(100);
         LISTENER.get_or_init(|| db_event_listener.clone());
         tokio::spawn(async move {
-            let mut db = Database { db: HashMap::new() };
-            let mut last_command_was_set = false;
-            while let Some(cmd) = db_event_receiver.recv().await {
-                match cmd {
-                    Set { key, value, flags } => {
-                        db._set(&key, &value, Some(&flags));
-                        // TODO: Better way to set this command
-                        last_command_was_set = true;
-                    }
-                    Get { key, emitter } => {
-                        let value = db._get(&key);
-                        emitter
-                            .send(value)
-                            .expect("Unable to send value back to caller");
-                        last_command_was_set = false;
-                    }
-                    WasLastCommandSet { emitter } => {
-                        emitter
-                            .send(last_command_was_set)
-                            .expect("Unable to send WasLastCommandSet back to caller");
-                        last_command_was_set = false;
-                    }
-                    Keys { emitter, flag } => {
-                        tracing::debug!("Getting keys with flag: {}", flag);
-                        if flag != "*" {
-                            emitter
-                                .send(vec![])
-                                .expect("Unable to send keys back to caller");
-                            continue;
-                        }
-                        let keys = db._keys();
-                        emitter
-                            .send(keys)
-                            .expect("Unable to send keys back to caller");
-                        last_command_was_set = false;
-                    }
-                    Type { emitter, key } => {
-                        let value = db._get_type(&key);
-                        emitter
-                            .send(value.to_string())
-                            .expect("Unable to send type back to caller");
-                        last_command_was_set = false;
-                    }
-                    XAdd {
-                        emitter,
-                        stream_key,
-                        stream_id,
-                        key,
-                        value,
-                    } => {
-                        let r = db._set_stream(&stream_key, &stream_id, &key, &value);
-                        emitter
-                            .send(r)
-                            .expect("Unable to send stream key back to caller");
-                        debug!(?stream_key, ?stream_id, ?key, ?value, "XAdd -- ");
-                        last_command_was_set = true;
-                    }
-                    XRange {
-                        emitter,
-                        stream_key,
-                        start,
-                        end,
-                    } => {
-                        last_command_was_set = false;
-                        let value = db._get_stream_range(&stream_key, start, end);
-                        let _ = emitter.send(value);
-                    }
-                    _GetLastStreamId {
-                        emitter,
-                        stream_key,
-                    } => {
-                        last_command_was_set = false;
-                        let value = db._get_latest_stream_id(&stream_key);
-                        let _ = emitter.send(value);
-                    }
-                    XRead { emitter, filters } => {
-                        last_command_was_set = false;
-                        let mut result: Vec<(String, Vec<StreamDbValueType>)> = vec![];
-
-                        debug!(?filters, "THIS IS ON XREAD");
-
-                        filters.iter().for_each(|(stream_key, stream_id)| {
-                            let (ms, sq) = stream_id.split_once("-").unwrap();
-                            let mut seq = sq.parse::<usize>().unwrap();
-                            seq += 1;
-                            let new_stream_id = format!("{}-{}", ms, seq.to_string());
-                            debug!(
-                                ?stream_key,
-                                ?stream_id,
-                                ?new_stream_id,
-                                "Getting stream range"
-                            );
-                            let value = db._get_stream_range(
-                                stream_key,
-                                new_stream_id.clone(),
-                                "+".to_string(),
-                            );
-                            result.push((stream_key.clone(), value));
-                        });
-                        debug!(?result, "XRead -- ");
-                        let _ = emitter.send(result);
-                    }
-                }
-            }
+            Database::_setup_db_event_listener(db_event_receiver).await;
         });
         db_event_listener
     }
@@ -147,6 +44,7 @@ impl Database {
         };
         Database::emit(set_event).await
     }
+
     pub async fn get(key: &String) -> anyhow::Result<Option<String>> {
         let (resp_emitter, listener) = oneshot::channel::<Option<String>>();
         let kv_cmd = DatabaseEvent::Get {
@@ -215,6 +113,113 @@ impl Database {
     }
 
     // Private Methods
+
+    async fn _setup_db_event_listener(mut receiver: mpsc::Receiver<DatabaseEvent>) {
+        let mut db = Database { db: HashMap::new() };
+        let mut last_command_was_set = false;
+        while let Some(cmd) = receiver.recv().await {
+            match cmd {
+                Set { key, value, flags } => {
+                    db._set(&key, &value, Some(&flags));
+                    // TODO: Better way to set this command
+                    last_command_was_set = true;
+                }
+                Get { key, emitter } => {
+                    let value = db._get(&key);
+                    emitter
+                        .send(value)
+                        .expect("Unable to send value back to caller");
+                    last_command_was_set = false;
+                }
+                WasLastCommandSet { emitter } => {
+                    emitter
+                        .send(last_command_was_set)
+                        .expect("Unable to send WasLastCommandSet back to caller");
+                    last_command_was_set = false;
+                }
+                Keys { emitter, flag } => {
+                    tracing::debug!("Getting keys with flag: {}", flag);
+                    if flag != "*" {
+                        emitter
+                            .send(vec![])
+                            .expect("Unable to send keys back to caller");
+                        continue;
+                    }
+                    let keys = db._keys();
+                    emitter
+                        .send(keys)
+                        .expect("Unable to send keys back to caller");
+                    last_command_was_set = false;
+                }
+                Type { emitter, key } => {
+                    let value = db._get_type(&key);
+                    emitter
+                        .send(value.to_string())
+                        .expect("Unable to send type back to caller");
+                    last_command_was_set = false;
+                }
+                XAdd {
+                    emitter,
+                    stream_key,
+                    stream_id,
+                    key,
+                    value,
+                } => {
+                    let r = db._set_stream(&stream_key, &stream_id, &key, &value);
+                    emitter
+                        .send(r)
+                        .expect("Unable to send stream key back to caller");
+                    debug!(?stream_key, ?stream_id, ?key, ?value, "XAdd -- ");
+                    last_command_was_set = true;
+                }
+                XRange {
+                    emitter,
+                    stream_key,
+                    start,
+                    end,
+                } => {
+                    last_command_was_set = false;
+                    let value = db._get_stream_range(&stream_key, start, end);
+                    let _ = emitter.send(value);
+                }
+                _GetLastStreamId {
+                    emitter,
+                    stream_key,
+                } => {
+                    last_command_was_set = false;
+                    let value = db._get_latest_stream_id(&stream_key);
+                    let _ = emitter.send(value);
+                }
+                XRead { emitter, filters } => {
+                    last_command_was_set = false;
+                    let mut result: Vec<(String, Vec<StreamDbValueType>)> = vec![];
+
+                    debug!(?filters, "THIS IS ON XREAD");
+
+                    filters.iter().for_each(|(stream_key, stream_id)| {
+                        let (ms, sq) = stream_id.split_once("-").unwrap();
+                        let mut seq = sq.parse::<usize>().unwrap();
+                        seq += 1;
+                        let new_stream_id = format!("{}-{}", ms, seq.to_string());
+                        debug!(
+                            ?stream_key,
+                            ?stream_id,
+                            ?new_stream_id,
+                            "Getting stream range"
+                        );
+                        let value = db._get_stream_range(
+                            stream_key,
+                            new_stream_id.clone(),
+                            "+".to_string(),
+                        );
+                        result.push((stream_key.clone(), value));
+                    });
+                    debug!(?result, "XRead -- ");
+                    let _ = emitter.send(result);
+                }
+            }
+        }
+    }
 
     fn _get_stream_range(
         &self,
