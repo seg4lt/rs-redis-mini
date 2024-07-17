@@ -37,7 +37,7 @@ impl ServerCommand {
                 writer.write_all(&resp_type.as_bytes()).await?;
             }
             Set { key, value, flags } => {
-                Database::set_kv(key, value, flags).await?;
+                Database::set(key, value, flags).await?;
                 let resp_type = RESPType::SimpleString("OK".to_string());
                 writer.write_all(&resp_type.as_bytes()).await?;
                 ReplicationEvent::Set {
@@ -48,18 +48,16 @@ impl ServerCommand {
                 .emit()
                 .await?;
             }
-            Get { key } => {
-                match Database::get_key(&key).await? {
-                    None => {
-                        let resp_type = RESPType::NullBulkString;
-                        writer.write_all(&resp_type.as_bytes()).await?;
-                    }
-                    Some(value) => {
-                        let resp_type = RESPType::BulkString(value);
-                        writer.write_all(&resp_type.as_bytes()).await?;
-                    }
+            Get { key } => match Database::get(&key).await? {
+                None => {
+                    let resp_type = RESPType::NullBulkString;
+                    writer.write_all(&resp_type.as_bytes()).await?;
                 }
-            }
+                Some(value) => {
+                    let resp_type = RESPType::BulkString(value);
+                    writer.write_all(&resp_type.as_bytes()).await?;
+                }
+            },
             Info { .. } => {
                 let is_master = AppConfig::is_master();
                 let role = match is_master {
@@ -115,13 +113,7 @@ impl ServerCommand {
                 }
             }
             Keys(flag) => {
-                let (tx, rx) = oneshot::channel::<Vec<String>>();
-                Database::emit(DatabaseEvent::Keys {
-                    resp: tx,
-                    flag: flag.to_owned(),
-                })
-                .await?;
-                let value = rx
+                let value = Database::keys(flag)
                     .await?
                     .iter()
                     .map(|key| RESPType::BulkString(key.to_owned()))
@@ -133,7 +125,7 @@ impl ServerCommand {
             Type(key) => {
                 let (tx, rx) = oneshot::channel::<String>();
                 Database::emit(DatabaseEvent::Type {
-                    resp: tx,
+                    emitter: tx,
                     key: key.to_owned(),
                 })
                 .await?;
@@ -150,7 +142,7 @@ impl ServerCommand {
             } => {
                 let (tx, rx) = oneshot::channel::<Result<String, String>>();
                 Database::emit(DatabaseEvent::XAdd {
-                    resp: tx,
+                    emitter: tx,
                     stream_key: stream_key.clone(),
                     stream_id: stream_id.clone(),
                     key: key.clone(),
@@ -187,7 +179,7 @@ impl ServerCommand {
                     let stream_id = if stream_id.as_str() == "$" {
                         let (tx, rx) = oneshot::channel::<String>();
                         Database::emit(DatabaseEvent::_GetLastStreamId {
-                            resp: tx,
+                            emitter: tx,
                             stream_key: stream_key.clone(),
                         })
                         .await?;
@@ -246,7 +238,7 @@ impl ServerCommand {
     ) -> anyhow::Result<RESPType> {
         let (tx, rx) = oneshot::channel::<Vec<(String, Vec<StreamDbValueType>)>>();
         Database::emit(DatabaseEvent::XRead {
-            resp: tx,
+            emitter: tx,
             filters: filters.clone(),
         })
         .await
@@ -303,7 +295,7 @@ impl ServerCommand {
         };
         let (tx, rx) = oneshot::channel::<Vec<StreamDbValueType>>();
         Database::emit(DatabaseEvent::XRange {
-            resp: tx,
+            emitter: tx,
             stream_key: stream_key.clone(),
             start: start.clone(),
             end: end.clone(),
@@ -361,7 +353,7 @@ impl ServerCommand {
 
         let (db_event_resp_emitter, db_event_resp_listener) = oneshot::channel::<bool>();
         Database::emit(DatabaseEvent::WasLastCommandSet {
-            resp: db_event_resp_emitter,
+            emitter: db_event_resp_emitter,
         })
         .await?;
         let was_last_command_set = db_event_resp_listener.await?;

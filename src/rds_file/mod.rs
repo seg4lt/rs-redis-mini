@@ -64,7 +64,7 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<()> {
                     let diff = exp_time - now_millis;
                     let mut map: HashMap<String, String> = HashMap::new();
                     map.insert("px".to_string(), diff.to_string());
-                    Database::set_kv(&key, &value, &map).await?;
+                    Database::set(&key, &value, &map).await?;
                 }
             }
             0xFB => {
@@ -77,7 +77,7 @@ pub(crate) async fn parse_rdb_file() -> anyhow::Result<()> {
             // Not special character, Try to read the data
             _ => {
                 let (key, value) = read_key_value(&mut reader, op_code[0]).await?;
-                Database::set_kv(&key, &value, &HashMap::new()).await?;
+                Database::set(&key, &value, &HashMap::new()).await?;
             }
         }
     }

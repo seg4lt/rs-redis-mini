@@ -10,39 +10,39 @@ pub enum DatabaseEvent {
         flags: HashMap<String, String>,
     },
     Get {
-        resp_emitter: oneshot::Sender<Option<String>>,
+        emitter: oneshot::Sender<Option<String>>,
         key: String,
     },
     Keys {
-        resp: oneshot::Sender<Vec<String>>,
+        emitter: oneshot::Sender<Vec<String>>,
         flag: String,
     },
     Type {
-        resp: oneshot::Sender<String>,
+        emitter: oneshot::Sender<String>,
         key: String,
     },
     XAdd {
-        resp: oneshot::Sender<Result<String, String>>,
+        emitter: oneshot::Sender<Result<String, String>>,
         stream_key: String,
         stream_id: String,
         key: String,
         value: String,
     },
     XRange {
-        resp: oneshot::Sender<Vec<StreamDbValueType>>,
+        emitter: oneshot::Sender<Vec<StreamDbValueType>>,
         stream_key: String,
         start: String,
         end: String,
     },
     XRead {
-        resp: oneshot::Sender<Vec<(String, Vec<StreamDbValueType>)>>,
+        emitter: oneshot::Sender<Vec<(String, Vec<StreamDbValueType>)>>,
         filters: Vec<(String, String)>,
     },
     WasLastCommandSet {
-        resp: oneshot::Sender<bool>,
+        emitter: oneshot::Sender<bool>,
     },
     _GetLastStreamId {
-        resp: oneshot::Sender<String>,
+        emitter: oneshot::Sender<String>,
         stream_key: String,
     },
 }
