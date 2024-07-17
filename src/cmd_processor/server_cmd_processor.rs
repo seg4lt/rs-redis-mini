@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{bail, Context};
+use anyhow::bail;
 use tokio::{
     io::AsyncWriteExt,
     net::tcp::WriteHalf,
@@ -18,7 +18,6 @@ use crate::{
         db_event::{DatabaseEvent, StreamDbValueType},
         Database,
     },
-    fdbg,
     replication::ReplicationEvent,
     resp_type::RESPType,
     LINE_ENDING,
@@ -211,20 +210,8 @@ impl ServerCommand {
         &self,
         filters: &Vec<(String, String)>,
     ) -> anyhow::Result<RESPType> {
-        let (tx, rx) = oneshot::channel::<Vec<(String, Vec<StreamDbValueType>)>>();
-        Database::emit(DatabaseEvent::XRead {
-            emitter: tx,
-            filters: filters.clone(),
-        })
-        .await
-        .context(fdbg!("Somethign wrong when sending read event"))?;
-
-        let db_value = rx.await.context(fdbg!("Unable to receive"))?;
-
-        debug!(?db_value, "DB Value");
-
+        let db_value = Database::xread(filters).await?;
         let mut outer_arr_value = vec![];
-
         let mut got_value = false;
         db_value
             .into_iter()

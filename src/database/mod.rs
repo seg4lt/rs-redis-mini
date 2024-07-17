@@ -4,8 +4,11 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use crate::fdbg;
+
 use self::db_event::DatabaseEvent::*;
 use self::db_event::{DatabaseEvent, DatabaseValue, DbValueType, StreamDbValueType};
+use anyhow::Context;
 use tokio::sync::{
     mpsc::{self, channel},
     oneshot,
@@ -18,6 +21,7 @@ pub type DatabaseEventEmitter = mpsc::Sender<DatabaseEvent>;
 
 // Probably shouldn't have this as static, but this makes program bit easier to write
 static LISTENER: OnceLock<DatabaseEventEmitter> = OnceLock::new();
+
 pub struct Database {
     db: HashMap<String, DatabaseValue>,
 }
@@ -102,6 +106,20 @@ impl Database {
         .await
         .map_err(|e| e.to_string())?;
         listener.await.map_err(|e| e.to_string())?
+    }
+
+    pub async fn xread(
+        filters: &Vec<(String, String)>,
+    ) -> anyhow::Result<Vec<(String, Vec<StreamDbValueType>)>> {
+        let (tx, rx) = oneshot::channel::<Vec<(String, Vec<StreamDbValueType>)>>();
+        Database::emit(DatabaseEvent::XRead {
+            emitter: tx,
+            filters: filters.clone(),
+        })
+        .await
+        .context(fdbg!("Something went wrong when sending read event"))?;
+        let db_value = rx.await.context(fdbg!("Unable to receive"))?;
+        Ok(db_value)
     }
 
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
