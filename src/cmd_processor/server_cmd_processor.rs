@@ -300,15 +300,7 @@ impl ServerCommand {
             writer.write_all(&resp_type.as_bytes()).await?;
             return Ok(());
         }
-
-        // let (db_event_resp_emitter, db_event_resp_listener) = oneshot::channel::<bool>();
-        // Database::emit(DatabaseEvent::WasLastCommandSet {
-        //     emitter: db_event_resp_emitter,
-        // })
-        // .await?;
-        // let was_last_command_set = db_event_resp_listener.await?;
         let was_last_command_set = Database::was_last_command_set().await?;
-
         if was_last_command_set == false {
             let resp_type = RESPType::Integer(num_replicas as i64);
             writer.write_all(&resp_type.as_bytes()).await?;

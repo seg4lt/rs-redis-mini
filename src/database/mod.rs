@@ -152,7 +152,7 @@ impl Database {
         Ok(())
     }
 
-    // Private Methods
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~ Private Methods ~~~~~~~~~~~~~~~~~~~~~~~~~
 
     async fn _setup_db_event_listener(mut receiver: mpsc::Receiver<DatabaseEvent>) {
         let mut db = Database { db: HashMap::new() };

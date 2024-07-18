@@ -18,6 +18,7 @@ pub enum SlaveCommand {
         value: String,
     },
 }
+
 impl SlaveCommand {
     // Need to find a better way later
     // Hack for now, because RESPType can be converted to ServerCommand
@@ -33,7 +34,10 @@ impl SlaveCommand {
                 key: key.clone(),
                 value: value.clone(),
             }),
-            _ => bail!("Only SET command is supported for now = {:?}", client_cmd),
+            _ => bail!(
+                "Only PING,SET and REPLCONF command is supported for now = {:?}",
+                client_cmd
+            ),
         }
     }
 }
