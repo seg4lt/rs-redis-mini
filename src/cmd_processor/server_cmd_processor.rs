@@ -255,16 +255,7 @@ impl ServerCommand {
         else {
             bail!("Not a xrange cmd");
         };
-        let (tx, rx) = oneshot::channel::<Vec<StreamDbValueType>>();
-        Database::emit(DatabaseEvent::XRange {
-            emitter: tx,
-            stream_key: stream_key.clone(),
-            start: start.clone(),
-            end: end.clone(),
-        })
-        .await?;
-
-        let db_value = rx.await?;
+        let db_value = Database::xrange(stream_key, start, end).await?;
         let mut map: BTreeMap<String, StreamDbValueType> = BTreeMap::new();
         db_value.into_iter().for_each(|item| {
             map.insert(

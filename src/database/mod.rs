@@ -122,6 +122,22 @@ impl Database {
         Ok(db_value)
     }
 
+    pub async fn xrange(
+        stream_key: &String,
+        start: &String,
+        end: &String,
+    ) -> anyhow::Result<Vec<StreamDbValueType>> {
+        let (emitter, listener) = oneshot::channel::<Vec<StreamDbValueType>>();
+        Database::emit(DatabaseEvent::XRange {
+            emitter,
+            stream_key: stream_key.clone(),
+            start: start.clone(),
+            end: end.clone(),
+        })
+        .await?;
+        Ok(listener.await?)
+    }
+
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
         let Some(emitter) = LISTENER.get() else {
             panic!("DatabaseEventEmitter not initialized");
