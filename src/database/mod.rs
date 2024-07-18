@@ -138,6 +138,12 @@ impl Database {
         Ok(listener.await?)
     }
 
+    pub async fn was_last_command_set() -> anyhow::Result<bool> {
+        let (emitter, listener) = oneshot::channel::<bool>();
+        Database::emit(DatabaseEvent::WasLastCommandSet { emitter }).await?;
+        Ok(listener.await?)
+    }
+
     pub async fn emit(event: DatabaseEvent) -> anyhow::Result<()> {
         let Some(emitter) = LISTENER.get() else {
             panic!("DatabaseEventEmitter not initialized");

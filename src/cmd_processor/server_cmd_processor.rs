@@ -14,10 +14,7 @@ use tracing::debug;
 use crate::{
     app_config::AppConfig,
     cmd_parser::server_command::ServerCommand,
-    database::{
-        db_event::{DatabaseEvent, StreamDbValueType},
-        Database,
-    },
+    database::{db_event::StreamDbValueType, Database},
     replication::ReplicationEvent,
     resp_type::RESPType,
     LINE_ENDING,
@@ -304,12 +301,13 @@ impl ServerCommand {
             return Ok(());
         }
 
-        let (db_event_resp_emitter, db_event_resp_listener) = oneshot::channel::<bool>();
-        Database::emit(DatabaseEvent::WasLastCommandSet {
-            emitter: db_event_resp_emitter,
-        })
-        .await?;
-        let was_last_command_set = db_event_resp_listener.await?;
+        // let (db_event_resp_emitter, db_event_resp_listener) = oneshot::channel::<bool>();
+        // Database::emit(DatabaseEvent::WasLastCommandSet {
+        //     emitter: db_event_resp_emitter,
+        // })
+        // .await?;
+        // let was_last_command_set = db_event_resp_listener.await?;
+        let was_last_command_set = Database::was_last_command_set().await?;
 
         if was_last_command_set == false {
             let resp_type = RESPType::Integer(num_replicas as i64);
