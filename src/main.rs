@@ -1,7 +1,5 @@
 #![warn(clippy::all)]
 
-use tracing::debug;
-
 use crate::{
     database::Database, log::setup_log, rds_file::parse_rdb_file, replication::ReplicationEvent,
     server::Server, slave::Slave,
@@ -24,7 +22,6 @@ pub const NEW_LINE: u8 = b'\n';
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     setup_log()?;
-    debug!("🚀🚀🚀 Logs from your program will appear here! 🚀🚀🚀");
     Database::new();
     parse_rdb_file().await?;
     ReplicationEvent::setup();

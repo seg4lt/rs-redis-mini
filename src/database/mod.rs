@@ -19,7 +19,8 @@ pub(crate) mod db_event;
 
 pub type DatabaseEventEmitter = mpsc::Sender<DatabaseEvent>;
 
-// Probably shouldn't have this as static, but this makes program bit easier to write
+// Probably shouldn't have this as static, but this makes program a bit easier to write
+// TODO: Find better way? How to not pass this everywhere?
 static LISTENER: OnceLock<DatabaseEventEmitter> = OnceLock::new();
 
 pub struct Database {
@@ -41,7 +42,7 @@ impl Database {
         value: &String,
         flags: &HashMap<String, String>,
     ) -> anyhow::Result<()> {
-        let set_event = DatabaseEvent::Set {
+        let set_event = Set {
             key: key.clone(),
             value: value.clone(),
             flags: flags.clone(),
@@ -51,7 +52,7 @@ impl Database {
 
     pub async fn get(key: &String) -> anyhow::Result<Option<String>> {
         let (resp_emitter, listener) = oneshot::channel::<Option<String>>();
-        let kv_cmd = DatabaseEvent::Get {
+        let kv_cmd = Get {
             emitter: resp_emitter,
             key: key.to_owned(),
         };
@@ -151,8 +152,6 @@ impl Database {
         emitter.send(event).await?;
         Ok(())
     }
-
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~ Private Methods ~~~~~~~~~~~~~~~~~~~~~~~~~
 
     async fn _setup_db_event_listener(mut receiver: mpsc::Receiver<DatabaseEvent>) {
         let mut db = Database { db: HashMap::new() };
@@ -267,24 +266,9 @@ impl Database {
         start: String,
         end: String,
     ) -> Vec<StreamDbValueType> {
-        let (start_ms, start_sq) = if start == "-" {
-            ("0", "0")
-        } else {
-            start.split_once("-").unwrap()
-        };
-        let (last_ms, last_sq) = if end == "+" {
-            ("999999999999999", "999999999")
-        } else {
-            end.split_once("-").unwrap()
-        };
-        let start_ms = start_ms.parse::<u128>().unwrap_or(0);
-        let end_ms = last_ms.parse::<u128>().unwrap_or(0);
-        let start_sq = start_sq.parse::<usize>().unwrap_or(0);
-        let end_sq = last_sq.parse::<usize>().unwrap_or(9999999);
+        let (start_ms, start_sq, end_ms, end_sq) = get_start_end_ms_seq(&start, &end);
         match self.db.get(stream_key) {
-            None => {
-                return vec![];
-            }
+            None => vec![],
             Some(value) => {
                 let DbValueType::Stream(stream) = &value.value else {
                     return vec![];
@@ -299,7 +283,7 @@ impl Database {
                     })
                     .cloned()
                     .collect::<Vec<_>>();
-                return value;
+                value
             }
         }
     }
@@ -509,4 +493,25 @@ impl Database {
         }
         return Ok((ms_part, seq_part));
     }
+}
+fn get_start_end_ms_seq(start: &String, end: &String) -> (u128, usize, u128, usize) {
+    let min_usize = usize::MIN.to_string();
+    let max_u128 = u128::MAX.to_string();
+    let max_usize = usize::MAX.to_string();
+
+    let (start_ms, start_sq) = if start == "-" {
+        (min_usize.as_str(), min_usize.as_str())
+    } else {
+        start.split_once("-").unwrap()
+    };
+    let (last_ms, last_sq) = if end == "+" {
+        (max_u128.as_str(), max_usize.as_str())
+    } else {
+        end.split_once("-").unwrap()
+    };
+    let start_ms = start_ms.parse::<u128>().unwrap_or(0);
+    let start_sq = start_sq.parse::<usize>().unwrap_or(0);
+    let end_ms = last_ms.parse::<u128>().unwrap_or(0);
+    let end_sq = last_sq.parse::<usize>().unwrap_or(usize::MAX);
+    (start_ms, start_sq, end_ms, end_sq)
 }
