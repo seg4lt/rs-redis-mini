@@ -61,13 +61,13 @@ impl Database {
     }
 
     pub async fn incr(key: &String) -> anyhow::Result<i64> {
-        let (resp_emitter, listener) = oneshot::channel::<i64>();
+        let (resp_emitter, listener) = oneshot::channel::<Result<i64, String>>();
         let kv_cmd = Incr {
             emitter: resp_emitter,
             key: key.to_owned(),
         };
         Database::emit(kv_cmd).await?;
-        Ok(listener.await?)
+        listener.await?.map_err(|s| anyhow::anyhow!(s))
     }
 
     pub async fn keys(flag: &String) -> anyhow::Result<Vec<String>> {
@@ -184,11 +184,15 @@ impl Database {
                     match db._incr(&key) {
                         Ok(v) => {
                             emitter
-                                .send(v)
+                                .send(Ok(v))
                                 .expect("Unable to send value back to caller");
                             last_command_was_set = false;
                         }
-                        _ => todo!(),
+                        _ => emitter
+                            .send(Err(
+                                "ERR value is not an integer or out of range".to_string()
+                            ))
+                            .unwrap(),
                     };
                 }
                 WasLastCommandSet { emitter } => {
@@ -441,11 +445,10 @@ impl Database {
                         );
                         return Ok(v);
                     }
-                    Err(_) => unimplemented!("UNABLE to parse to i64"),
+                    Err(_) => anyhow::bail!("-ERR value is not an integer or out of range"),
                 };
             }
-
-            _ => unimplemented!("Cannot incr non integer value"),
+            _ => anyhow::bail!("-ERR value is not an integer or out of range"),
         }
     }
 
@@ -541,7 +544,6 @@ impl Database {
         Ok((ms_part, seq_part))
     }
 }
-
 fn get_start_end_ms_seq(start: &String, end: &String) -> (u128, usize, u128, usize) {
     let min_usize = usize::MIN.to_string();
     let max_u128 = u128::MAX.to_string();

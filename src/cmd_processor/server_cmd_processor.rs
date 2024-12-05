@@ -54,11 +54,16 @@ impl ServerCommand {
                     writer.write_all(&resp_type.as_bytes()).await?;
                 }
             },
-            Incr { key } => {
-                let value = Database::incr(&key).await?;
-                let resp_type = RESPType::Integer(value);
-                writer.write_all(&resp_type.as_bytes()).await?;
-            }
+            Incr { key } => match Database::incr(&key).await {
+                Ok(value) => {
+                    let resp_type = RESPType::Integer(value);
+                    writer.write_all(&resp_type.as_bytes()).await?;
+                }
+                Err(e) => {
+                    let resp_type = RESPType::Error(e.to_string());
+                    writer.write_all(&resp_type.as_bytes()).await?;
+                }
+            },
             Info { .. } => {
                 let is_master = AppConfig::is_master();
                 let role = match is_master {

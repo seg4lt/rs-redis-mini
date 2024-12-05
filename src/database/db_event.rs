@@ -14,7 +14,7 @@ pub enum DatabaseEvent {
         key: String,
     },
     Incr {
-        emitter: Sender<i64>,
+        emitter: Sender<Result<i64, String>>,
         key: String,
     },
     Keys {
