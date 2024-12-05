@@ -41,7 +41,7 @@ impl Server {
                 .context(fdbg!("Unable to write to client stream"))?;
             writer.flush().await?;
             match client_cmd {
-                ServerCommand::Psync { .. } => {
+                ServerCommand::PSync { .. } => {
                     let (host, port) = (addr.ip().to_string(), addr.port());
                     ReplicationEvent::SaveStream { host, port, stream }
                         .emit()

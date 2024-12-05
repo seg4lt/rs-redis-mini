@@ -7,9 +7,8 @@ use tokio::io::BufReader;
 use tokio::sync::Mutex;
 use tokio::{net::TcpStream, sync::oneshot};
 
-use tokio::{io::AsyncWriteExt, sync::mpsc};
-
 use crate::resp_type::RESPType;
+use tokio::{io::AsyncWriteExt, sync::mpsc};
 
 static EMITTER: OnceLock<ReplicationEventEmitter> = OnceLock::new();
 

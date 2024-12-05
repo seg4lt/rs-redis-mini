@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use tokio::sync::oneshot;
+use tokio::sync::oneshot::Sender;
 
 #[derive(Debug)]
 pub enum DatabaseEvent {
@@ -10,47 +10,54 @@ pub enum DatabaseEvent {
         flags: HashMap<String, String>,
     },
     Get {
-        emitter: oneshot::Sender<Option<String>>,
+        emitter: Sender<Option<String>>,
+        key: String,
+    },
+    Incr {
+        emitter: Sender<i64>,
         key: String,
     },
     Keys {
-        emitter: oneshot::Sender<Vec<String>>,
+        emitter: Sender<Vec<String>>,
         flag: String,
     },
     Type {
-        emitter: oneshot::Sender<String>,
+        emitter: Sender<String>,
         key: String,
     },
     XAdd {
-        emitter: oneshot::Sender<Result<String, String>>,
+        emitter: Sender<Result<String, String>>,
         stream_key: String,
         stream_id: String,
         key: String,
         value: String,
     },
     XRange {
-        emitter: oneshot::Sender<Vec<StreamDbValueType>>,
+        emitter: Sender<Vec<StreamDbValueType>>,
         stream_key: String,
         start: String,
         end: String,
     },
     XRead {
-        emitter: oneshot::Sender<Vec<(String, Vec<StreamDbValueType>)>>,
+        emitter: Sender<Vec<(String, Vec<StreamDbValueType>)>>,
         filters: Vec<(String, String)>,
     },
     WasLastCommandSet {
-        emitter: oneshot::Sender<bool>,
+        emitter: Sender<bool>,
     },
     _GetLastStreamId {
-        emitter: oneshot::Sender<String>,
+        emitter: Sender<String>,
         stream_key: String,
     },
 }
+
+#[derive(Debug, Clone)]
 pub struct DatabaseValue {
     pub value: DbValueType,
     pub exp_time: Option<Instant>,
 }
 
+#[derive(Clone, Debug)]
 pub enum DbValueType {
     String(String),
     Stream(Vec<StreamDbValueType>),

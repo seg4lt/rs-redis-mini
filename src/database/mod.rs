@@ -60,6 +60,16 @@ impl Database {
         Ok(listener.await?)
     }
 
+    pub async fn incr(key: &String) -> anyhow::Result<i64> {
+        let (resp_emitter, listener) = oneshot::channel::<i64>();
+        let kv_cmd = Incr {
+            emitter: resp_emitter,
+            key: key.to_owned(),
+        };
+        Database::emit(kv_cmd).await?;
+        Ok(listener.await?)
+    }
+
     pub async fn keys(flag: &String) -> anyhow::Result<Vec<String>> {
         let (emitter, listener) = oneshot::channel::<Vec<String>>();
         let keys_event = DatabaseEvent::Keys {
@@ -159,7 +169,7 @@ impl Database {
         while let Some(cmd) = receiver.recv().await {
             match cmd {
                 Set { key, value, flags } => {
-                    db._set(&key, &value, Some(&flags));
+                    db._set(&key, value, Some(&flags));
                     // TODO: Better way to set this command
                     last_command_was_set = true;
                 }
@@ -169,6 +179,17 @@ impl Database {
                         .send(value)
                         .expect("Unable to send value back to caller");
                     last_command_was_set = false;
+                }
+                Incr { key, emitter } => {
+                    match db._incr(&key) {
+                        Ok(v) => {
+                            emitter
+                                .send(v)
+                                .expect("Unable to send value back to caller");
+                            last_command_was_set = false;
+                        }
+                        _ => todo!(),
+                    };
                 }
                 WasLastCommandSet { emitter } => {
                     emitter
@@ -347,8 +368,8 @@ impl Database {
         Ok(format!("{ms_part}-{seq_part}"))
     }
 
-    fn _set(&mut self, key: &String, value: &String, flags: Option<&HashMap<String, String>>) {
-        info!("Setting key: {} with value: {}", key, value);
+    fn _set(&mut self, key: &String, value: String, flags: Option<&HashMap<String, String>>) {
+        info!("Setting key: {key} with value: {value:?}");
         let exp_time = match flags {
             None => None,
             Some(flags) => flags
@@ -391,35 +412,61 @@ impl Database {
         };
         stream_id
     }
+    fn _incr(&mut self, key: &String) -> anyhow::Result<i64> {
+        let value = self.db.get(key);
+        match value {
+            None => {
+                self.db.insert(
+                    key.to_owned(),
+                    DatabaseValue {
+                        value: DbValueType::String("1".to_owned()),
+                        exp_time: None,
+                    },
+                );
+                Ok(1)
+            }
+            Some(DatabaseValue {
+                value: DbValueType::String(v),
+                exp_time,
+            }) => {
+                match v.parse::<i64>() {
+                    Ok(v) => {
+                        let v = v + 1;
+                        self.db.insert(
+                            key.to_owned(),
+                            DatabaseValue {
+                                value: DbValueType::String(v.to_string()),
+                                exp_time: exp_time.clone(),
+                            },
+                        );
+                        return Ok(v);
+                    }
+                    Err(_) => unimplemented!("UNABLE to parse to i64"),
+                };
+            }
+
+            _ => unimplemented!("Cannot incr non integer value"),
+        }
+    }
 
     fn _get(&mut self, key: &String) -> Option<String> {
         info!("Getting value for key: {}", key);
         let value = self.db.get(key);
-        let value = match value {
-            None => None,
-            Some(kv) => match kv.exp_time {
-                None => {
-                    let value = match &kv.value {
-                        DbValueType::String(v) => v.clone(),
-                        _ => unimplemented!("Only string value can invoke GET for now"),
-                    };
-                    Some(value.clone())
-                }
-                Some(exp_time) => {
-                    if exp_time > Instant::now() {
-                        let value = match &kv.value {
-                            DbValueType::String(v) => v.clone(),
-                            _ => unimplemented!("Only string value can invoke GET for now"),
-                        };
-                        Some(value.clone())
-                    } else {
-                        self.db.remove(key);
-                        None
-                    }
-                }
-            },
+        let Some(db_value) = value else {
+            return None;
         };
-        value
+        let value = match &db_value.value {
+            DbValueType::Stream(..) => unimplemented!("GET not supported for streams"),
+            DbValueType::String(e) => e.clone(),
+        };
+        let Some(exp_time) = db_value.exp_time else {
+            return Some(value);
+        };
+        if exp_time <= Instant::now() {
+            self.db.remove(key);
+            return None;
+        }
+        Some(value)
     }
 
     fn _get_stream_id(
@@ -491,9 +538,10 @@ impl Database {
                     .to_string(),
             );
         }
-        return Ok((ms_part, seq_part));
+        Ok((ms_part, seq_part))
     }
 }
+
 fn get_start_end_ms_seq(start: &String, end: &String) -> (u128, usize, u128, usize) {
     let min_usize = usize::MIN.to_string();
     let max_u128 = u128::MAX.to_string();

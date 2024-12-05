@@ -20,14 +20,17 @@ pub enum ServerCommand {
         flags: HashMap<String, String>,
     },
     Info {
+        #[allow(dead_code)]
         key: String,
     },
     ReplConf {
         key: String,
         value: String,
     },
-    Psync {
+    PSync {
+        #[allow(dead_code)]
         key: String,
+        #[allow(dead_code)]
         value: String,
     },
     Wait {
@@ -52,6 +55,9 @@ pub enum ServerCommand {
         end: String,
     },
     XRead(Vec<(String, String)>, Option<u64>),
+    Incr {
+        key: String,
+    },
     CustomNewLine,
     ExitConn,
 }
@@ -90,6 +96,7 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "XADD" => parse_xadd_cmd(&items[1..]),
         "XRANGE" => parse_xrange_cmd(&items[1..]),
         "XREAD" => parse_xread_cmd(&items[1..]),
+        "INCR" => parse_incr_cmd(&items[1..]),
         _ => bail!("Unknown client command: {}", cmd),
     }
 }
@@ -224,7 +231,7 @@ fn parse_psync_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(value)) = items.get(1) else {
         bail!(fdbg!("PSYNC command must have at least one value"));
     };
-    Ok(ServerCommand::Psync {
+    Ok(ServerCommand::PSync {
         key: key.to_string(),
         value: value.to_string(),
     })
@@ -260,6 +267,15 @@ fn parse_get_cmd(items: &[RESPType]) -> R {
     })
 }
 
+fn parse_incr_cmd(items: &[RESPType]) -> R {
+    let Some(RESPType::BulkString(key)) = items.get(0) else {
+        bail!(fdbg!("Get command must have at least key"));
+    };
+    Ok(ServerCommand::Incr {
+        key: key.to_owned(),
+    })
+}
+
 fn parse_set_cmd(items: &[RESPType]) -> R {
     let Some(RESPType::BulkString(key)) = items.get(0) else {
         bail!(fdbg!("SET command must have at least key"));
@@ -287,6 +303,7 @@ fn parse_set_cmd(items: &[RESPType]) -> R {
             _ => {}
         }
     }
+
     Ok(ServerCommand::Set {
         key: key.to_owned(),
         value: value.to_owned(),

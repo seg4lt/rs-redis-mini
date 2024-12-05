@@ -14,7 +14,9 @@ pub enum SlaveCommand {
         flags: HashMap<String, String>,
     },
     ReplConf {
+        #[allow(dead_code)]
         key: String,
+        #[allow(dead_code)]
         value: String,
     },
 }
@@ -27,7 +29,7 @@ impl SlaveCommand {
             ServerCommand::Ping => Ok(SlaveCommand::Ping),
             ServerCommand::Set { key, value, flags } => Ok(SlaveCommand::Set {
                 key: key.clone(),
-                value: value.clone(),
+                value: value.to_owned(),
                 flags: flags.clone(),
             }),
             ServerCommand::ReplConf { key, value } => Ok(SlaveCommand::ReplConf {

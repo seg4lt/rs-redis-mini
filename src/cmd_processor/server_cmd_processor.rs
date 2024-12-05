@@ -38,7 +38,7 @@ impl ServerCommand {
                 writer.write_all(&resp_type.as_bytes()).await?;
                 ReplicationEvent::Set {
                     key: key.to_string(),
-                    value: value.to_string(),
+                    value: value.clone(),
                     flags: flags.clone(),
                 }
                 .emit()
@@ -54,6 +54,11 @@ impl ServerCommand {
                     writer.write_all(&resp_type.as_bytes()).await?;
                 }
             },
+            Incr { key } => {
+                let value = Database::incr(&key).await?;
+                let resp_type = RESPType::Integer(value);
+                writer.write_all(&resp_type.as_bytes()).await?;
+            }
             Info { .. } => {
                 let is_master = AppConfig::is_master();
                 let role = match is_master {
@@ -75,7 +80,7 @@ impl ServerCommand {
                 let resp_type = RESPType::SimpleString("OK".to_string());
                 writer.write_all(&resp_type.as_bytes()).await?;
             }
-            Psync { .. } => {
+            PSync { .. } => {
                 let replid = AppConfig::get_master_replid();
                 let offset = AppConfig::get_master_repl_offset();
                 let content = format!("+FULLRESYNC {replid} {offset}");
