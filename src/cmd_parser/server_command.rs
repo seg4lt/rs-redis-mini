@@ -58,6 +58,7 @@ pub enum ServerCommand {
     Incr {
         key: String,
     },
+    Multi,
     CustomNewLine,
     ExitConn,
 }
@@ -97,8 +98,13 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "XRANGE" => parse_xrange_cmd(&items[1..]),
         "XREAD" => parse_xread_cmd(&items[1..]),
         "INCR" => parse_incr_cmd(&items[1..]),
+        "MULTI" => parse_multi_cmd(),
         _ => bail!("Unknown client command: {}", cmd),
     }
+}
+
+fn parse_multi_cmd() -> R {
+    Ok(ServerCommand::Multi)
 }
 
 fn parse_xread_cmd(items: &[RESPType]) -> R {

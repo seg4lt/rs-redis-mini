@@ -149,8 +149,16 @@ impl ServerCommand {
             }
             XRange { .. } => self.process_xrange_cmd(writer).await?,
             XRead { .. } => self.process_xread_cmd(writer).await?,
+            Multi => self.process_multi_cmd(writer).await?,
             CustomNewLine | ExitConn => {}
         };
+        Ok(())
+    }
+
+    async fn process_multi_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+        let resp = RESPType::SimpleString("OK".to_string());
+        writer.write_all(&resp.as_bytes()).await?;
+        writer.flush().await?;
         Ok(())
     }
 
