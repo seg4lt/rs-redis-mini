@@ -46,19 +46,10 @@ impl ServerCommand {
                 resp_type
             }
             Get { key } => match Database::get(&key).await? {
-                None => {
-                    let resp_type = RESPType::NullBulkString;
-                    resp_type
-                }
+                None => RESPType::NullBulkString,
                 Some(value) => match value {
-                    DbValueType::Integer(value) => {
-                        let resp_type = RESPType::BulkString(value.to_string());
-                        resp_type
-                    }
-                    DbValueType::String(value) => {
-                        let resp_type = RESPType::BulkString(value);
-                        resp_type
-                    }
+                    DbValueType::Integer(value) => RESPType::BulkString(value.to_string()),
+                    DbValueType::String(value) => RESPType::BulkString(value),
                     DbValueType::Stream(_) => unimplemented!("streams not supported via GET"),
                 },
             },
@@ -68,10 +59,7 @@ impl ServerCommand {
                     DbValueType::String(s) => RESPType::BulkString(s),
                     DbValueType::Stream(_) => unimplemented!("stream incr not supported"),
                 },
-                Err(e) => {
-                    let resp_type = RESPType::Error(e.to_string());
-                    resp_type
-                }
+                Err(e) => RESPType::Error(e.to_string()),
             },
             Info { .. } => {
                 let is_master = AppConfig::is_master();
@@ -87,19 +75,14 @@ impl ServerCommand {
                         AppConfig::get_master_repl_offset()
                     ));
                 }
-                let info_string = RESPType::BulkString(info_vec.join(LINE_ENDING));
-                info_string
+                RESPType::BulkString(info_vec.join(LINE_ENDING))
             }
-            ReplConf { .. } => {
-                let resp_type = RESPType::SimpleString("OK".to_string());
-                resp_type
-            }
+            ReplConf { .. } => RESPType::SimpleString("OK".to_string()),
             PSync { .. } => {
                 let replid = AppConfig::get_master_replid();
                 let offset = AppConfig::get_master_repl_offset();
                 let content = format!("+FULLRESYNC {replid} {offset}");
-                let resp_type = RESPType::SimpleString(content);
-                resp_type
+                RESPType::SimpleString(content)
             }
             Wait { .. } => self.process_wait_cmd().await?,
             Config { cmd, key } => {
@@ -108,49 +91,34 @@ impl ServerCommand {
                     bail!("Only GET command is supported for CONFIG");
                 }
                 match key.as_str() {
-                    "dir" => {
-                        let resp_type = RESPType::Array(vec![
-                            RESPType::BulkString("dir".to_string()),
-                            RESPType::BulkString(AppConfig::get_rds_dir().to_string()),
-                        ]);
-                        resp_type
-                    }
-                    "dbfilename" => {
-                        let resp_type = RESPType::Array(vec![
-                            RESPType::BulkString("dbfilename".to_string()),
-                            RESPType::BulkString(AppConfig::get_rds_file_name().to_string()),
-                        ]);
-                        resp_type
-                    }
+                    "dir" => RESPType::Array(vec![
+                        RESPType::BulkString("dir".to_string()),
+                        RESPType::BulkString(AppConfig::get_rds_dir().to_string()),
+                    ]),
+                    "dbfilename" => RESPType::Array(vec![
+                        RESPType::BulkString("dbfilename".to_string()),
+                        RESPType::BulkString(AppConfig::get_rds_file_name().to_string()),
+                    ]),
                     _ => bail!("CONFIG key not supported yet"),
                 }
             }
-            Keys(flag) => {
-                let value = Database::keys(flag)
+            Keys(flag) => RESPType::Array(
+                Database::keys(flag)
                     .await?
                     .iter()
                     .map(|key| RESPType::BulkString(key.to_owned()))
-                    .collect();
-                let resp = RESPType::Array(value);
-                resp
-            }
-            Type(key) => {
-                let value = Database::get_type(key).await?;
-                let resp = RESPType::SimpleString(value);
-                resp
-            }
+                    .collect(),
+            ),
+            Type(key) => RESPType::SimpleString(Database::get_type(key).await?),
             XAdd {
                 stream_key,
                 stream_id,
                 key,
                 value,
-            } => {
-                let resp = match Database::xadd(stream_key, stream_id, key, value).await {
-                    Ok(value) => RESPType::BulkString(value),
-                    Err(err) => RESPType::Error(err),
-                };
-                resp
-            }
+            } => match Database::xadd(stream_key, stream_id, key, value).await {
+                Ok(value) => RESPType::BulkString(value),
+                Err(err) => RESPType::Error(err),
+            },
             XRange { .. } => self.process_xrange_cmd().await?,
             XRead { .. } => self.process_xread_cmd().await?,
             Multi => self.process_multi_cmd(tx_stack).await?,
@@ -180,7 +148,9 @@ impl ServerCommand {
         };
         match Database::get(&key).await.unwrap() {
             None => {
-                Database::set(key, &"0".to_string(), &HashMap::new()).await.unwrap();
+                Database::set(key, &"0".to_string(), &HashMap::new())
+                    .await
+                    .unwrap();
             }
             _ => {}
         }
