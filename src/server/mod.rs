@@ -81,7 +81,8 @@ async fn queue_if_transaction_active(
     tx_stack: &mut Vec<Vec<ServerCommand>>,
 ) -> Option<ServerCommand> {
     use ServerCommand::*;
-    if matches!(cmd, Exec) || matches!(cmd, Multi) || tx_stack.is_empty() {
+    if matches!(cmd, Exec) || matches!(cmd, Multi) || matches!(cmd, Discard) || tx_stack.is_empty()
+    {
         return Some(cmd);
     }
     tx_stack.last_mut().unwrap().push(cmd);

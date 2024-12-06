@@ -136,6 +136,14 @@ impl ServerCommand {
                 }
                 RESPType::Array(collect)
             }
+            Discard => {
+                if tx_stack.is_empty() {
+                    RESPType::Error("ERR DISCARD without MULTI".to_string())
+                } else {
+                    let _ = tx_stack.pop();
+                    RESPType::SimpleString("OK".to_string())
+                }
+            }
             CustomNewLine | ExitConn => {
                 return Ok(None);
             }

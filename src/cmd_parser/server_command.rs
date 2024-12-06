@@ -60,6 +60,7 @@ pub enum ServerCommand {
     },
     Multi,
     Exec,
+    Discard,
     CustomNewLine,
     ExitConn,
 }
@@ -101,10 +102,14 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "INCR" => parse_incr_cmd(&items[1..]),
         "MULTI" => parse_multi_cmd(),
         "EXEC" => parse_exec_cmd(),
+        "DISCARD" => parse_discard_cmd(),
         _ => bail!("Unknown client command: {}", cmd),
     }
 }
 
+fn parse_discard_cmd() -> R {
+    Ok(ServerCommand::Discard)
+}
 fn parse_exec_cmd() -> R {
     Ok(ServerCommand::Exec)
 }
