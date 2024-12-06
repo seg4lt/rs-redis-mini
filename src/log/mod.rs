@@ -3,6 +3,7 @@ use tracing::{subscriber::set_global_default, Level};
 pub(crate) mod fdbg;
 
 pub fn setup_log() -> anyhow::Result<()> {
+    color_eyre::install().unwrap();
     let subscriber = tracing_subscriber::fmt()
         // Use a more compact, abbreviated log format
         .compact()

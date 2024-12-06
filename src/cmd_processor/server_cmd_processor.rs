@@ -1,9 +1,10 @@
+use anyhow::bail;
+use async_recursion::async_recursion;
+use std::collections::VecDeque;
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
 };
-
-use anyhow::bail;
 use tokio::{
     io::AsyncWriteExt,
     net::tcp::WriteHalf,
@@ -23,6 +24,7 @@ use crate::{
 use ServerCommand::*;
 
 impl ServerCommand {
+    #[async_recursion]
     pub async fn process_client_cmd(
         &self,
         tx_stack: &mut Vec<Vec<ServerCommand>>,
@@ -142,13 +144,20 @@ impl ServerCommand {
             }
             XRange { .. } => self.process_xrange_cmd().await?,
             XRead { .. } => self.process_xread_cmd().await?,
-            Multi => self.process_multi_cmd().await?,
+            Multi => self.process_multi_cmd(tx_stack).await?,
             Exec => {
                 if tx_stack.is_empty() {
                     let resp = RESPType::Error("ERR EXEC without MULTI".to_string());
                     return Ok(Some(resp));
                 }
-                unimplemented!()
+                let tx = tx_stack.pop().unwrap();
+                let mut collect: Vec<RESPType> = vec![];
+                for s_cmd in tx {
+                    if let Some(resp) = s_cmd.process_client_cmd(tx_stack).await? {
+                        collect.push(resp);
+                    }
+                }
+                RESPType::Array(collect)
             }
             CustomNewLine | ExitConn => {
                 return Ok(None);
@@ -157,7 +166,11 @@ impl ServerCommand {
         Ok(Some(resp))
     }
 
-    async fn process_multi_cmd(&self) -> anyhow::Result<RESPType> {
+    async fn process_multi_cmd(
+        &self,
+        tx_stack: &mut Vec<Vec<ServerCommand>>,
+    ) -> anyhow::Result<RESPType> {
+        tx_stack.push(vec![]);
         let resp = RESPType::SimpleString("OK".to_string());
         Ok(resp)
     }

@@ -37,6 +37,7 @@ impl Server {
         loop {
             let resp_type = RESPType::parse(&mut reader).await?;
             let client_cmd = ServerCommand::from(&resp_type)?;
+
             let Some(client_cmd) = queue_if_transaction_active(client_cmd, &mut tx_stack) else {
                 writer
                     .write(&RESPType::SimpleString("QUEUED".to_string()).as_bytes())
@@ -44,6 +45,7 @@ impl Server {
                     .context(fdbg!("unable to write queued string"))?;
                 continue;
             };
+
             if let Some(resp) = client_cmd
                 .process_client_cmd(&mut tx_stack)
                 .await
@@ -78,12 +80,12 @@ fn queue_if_transaction_active(
     tx_stack: &mut Vec<Vec<ServerCommand>>,
 ) -> Option<ServerCommand> {
     use ServerCommand::*;
-    if matches!(cmd, Exec) || tx_stack.is_empty() {
+    if matches!(cmd, Exec) || matches!(cmd, Multi) || tx_stack.is_empty() {
         return Some(cmd);
     }
     match cmd {
         Set { .. } => {
-            tx_stack.first_mut().unwrap().push(cmd);
+            tx_stack.last_mut().unwrap().push(cmd);
             None
         }
         _ => Some(cmd),
