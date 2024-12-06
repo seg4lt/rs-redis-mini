@@ -7,7 +7,7 @@ use crate::{fdbg, resp_type::RESPType};
 
 type R = anyhow::Result<ServerCommand>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ServerCommand {
     Ping,
     Echo(String),
@@ -59,6 +59,7 @@ pub enum ServerCommand {
         key: String,
     },
     Multi,
+    Exec,
     CustomNewLine,
     ExitConn,
 }
@@ -99,8 +100,13 @@ fn parse_client_cmd(items: &[RESPType]) -> R {
         "XREAD" => parse_xread_cmd(&items[1..]),
         "INCR" => parse_incr_cmd(&items[1..]),
         "MULTI" => parse_multi_cmd(),
+        "EXEC" => parse_exec_cmd(),
         _ => bail!("Unknown client command: {}", cmd),
     }
+}
+
+fn parse_exec_cmd() -> R {
+    Ok(ServerCommand::Exec)
 }
 
 fn parse_multi_cmd() -> R {

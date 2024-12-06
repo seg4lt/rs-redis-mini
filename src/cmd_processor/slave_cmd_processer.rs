@@ -12,7 +12,9 @@ impl SlaveCommand {
     ) -> anyhow::Result<()> {
         match self {
             Ping => (),
-            Set { key, value, flags } => Database::set(key, value, flags).await?,
+            Set { key, value, flags } => {
+                let _ = Database::set(key, value, flags).await?;
+            }
             ReplConf { .. } => {
                 let resp_type = RESPType::Array(vec![
                     RESPType::BulkString("REPLCONF".to_string()),

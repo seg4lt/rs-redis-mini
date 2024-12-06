@@ -9,6 +9,7 @@ use crate::fdbg;
 use self::db_event::DatabaseEvent::*;
 use self::db_event::{DatabaseEvent, DatabaseValue, DbValueType, StreamDbValueType};
 use anyhow::Context;
+use db_event::DbError;
 use tokio::sync::{
     mpsc::{self, channel},
     oneshot,
@@ -72,7 +73,7 @@ impl Database {
 
     pub async fn keys(flag: &String) -> anyhow::Result<Vec<String>> {
         let (emitter, listener) = oneshot::channel::<Vec<String>>();
-        let keys_event = DatabaseEvent::Keys {
+        let keys_event = Keys {
             emitter,
             flag: flag.clone(),
         };
@@ -416,39 +417,27 @@ impl Database {
         };
         stream_id
     }
-    fn _incr(&mut self, key: &String) -> anyhow::Result<i64> {
-        let value = self.db.get(key);
-        match value {
-            None => {
-                self.db.insert(
-                    key.to_owned(),
-                    DatabaseValue {
-                        value: DbValueType::String("1".to_owned()),
-                        exp_time: None,
-                    },
-                );
-                Ok(1)
+    fn _incr(&mut self, key: &String) -> Result<i64, DbError> {
+        let value = self._get(key);
+        let Some(value) = value else {
+            self.db.insert(
+                key.to_owned(),
+                DatabaseValue {
+                    value: DbValueType::String("1".to_owned()),
+                    exp_time: None,
+                },
+            );
+            return Ok(1);
+        };
+        match value.parse::<i64>() {
+            Ok(v) => {
+                let v = v + 1;
+                self._set(key, v.to_string(), None); // setting flag to None, probably shouldn't do this
+                Ok(v)
             }
-            Some(DatabaseValue {
-                value: DbValueType::String(v),
-                exp_time,
-            }) => {
-                match v.parse::<i64>() {
-                    Ok(v) => {
-                        let v = v + 1;
-                        self.db.insert(
-                            key.to_owned(),
-                            DatabaseValue {
-                                value: DbValueType::String(v.to_string()),
-                                exp_time: exp_time.clone(),
-                            },
-                        );
-                        return Ok(v);
-                    }
-                    Err(_) => anyhow::bail!("-ERR value is not an integer or out of range"),
-                };
-            }
-            _ => anyhow::bail!("-ERR value is not an integer or out of range"),
+            Err(_) => Err(DbError::UnableToPerformAction(
+                "ERR value is not an integer or out of range".to_string(),
+            )),
         }
     }
 

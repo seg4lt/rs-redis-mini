@@ -11,6 +11,7 @@ use tokio::{
 };
 use tracing::debug;
 
+use crate::server::Server;
 use crate::{
     app_config::AppConfig,
     cmd_parser::server_command::ServerCommand,
@@ -22,7 +23,11 @@ use crate::{
 use ServerCommand::*;
 
 impl ServerCommand {
-    pub async fn process_client_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+    pub async fn process_client_cmd(
+        &self,
+        writer: &mut WriteHalf<'_>,
+        tx_stack: &mut Vec<Vec<ServerCommand>>,
+    ) -> anyhow::Result<()> {
         match self {
             Ping => {
                 let resp_type = RESPType::SimpleString("PONG".to_string());
@@ -150,6 +155,13 @@ impl ServerCommand {
             XRange { .. } => self.process_xrange_cmd(writer).await?,
             XRead { .. } => self.process_xread_cmd(writer).await?,
             Multi => self.process_multi_cmd(writer).await?,
+            Exec => {
+                if tx_stack.is_empty() {
+                    let resp = RESPType::Error("ERR EXEC without MULTI".to_string());
+                    writer.write_all(&resp.as_bytes()).await?;
+                    writer.flush().await?;
+                }
+            }
             CustomNewLine | ExitConn => {}
         };
         Ok(())

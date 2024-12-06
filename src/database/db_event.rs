@@ -1,5 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
+use thiserror::Error;
 use tokio::sync::oneshot::Sender;
 
 #[derive(Debug)]
@@ -69,4 +70,13 @@ pub struct StreamDbValueType {
     pub stream_id_seq_part: usize,
     pub key: String,
     pub value: String,
+}
+
+#[derive(Error, Debug, Clone)]
+pub enum DbError {
+    #[error("{0}: unknown error")]
+    Unknown(String),
+
+    #[error("{0}")]
+    UnableToPerformAction(String),
 }
