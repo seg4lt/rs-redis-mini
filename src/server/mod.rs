@@ -38,7 +38,8 @@ impl Server {
             let resp_type = RESPType::parse(&mut reader).await?;
             let client_cmd = ServerCommand::from(&resp_type)?;
 
-            let Some(client_cmd) = queue_if_transaction_active(client_cmd, &mut tx_stack) else {
+            let Some(client_cmd) = queue_if_transaction_active(client_cmd, &mut tx_stack).await
+            else {
                 writer
                     .write(&RESPType::SimpleString("QUEUED".to_string()).as_bytes())
                     .await
@@ -75,7 +76,7 @@ impl Server {
     }
 }
 
-fn queue_if_transaction_active(
+async fn queue_if_transaction_active(
     cmd: ServerCommand,
     tx_stack: &mut Vec<Vec<ServerCommand>>,
 ) -> Option<ServerCommand> {
@@ -83,11 +84,6 @@ fn queue_if_transaction_active(
     if matches!(cmd, Exec) || matches!(cmd, Multi) || tx_stack.is_empty() {
         return Some(cmd);
     }
-    match cmd {
-        Set { .. } | Incr { .. } => {
-            tx_stack.last_mut().unwrap().push(cmd);
-            None
-        }
-        _ => Some(cmd),
-    }
+    tx_stack.last_mut().unwrap().push(cmd);
+    None
 }
