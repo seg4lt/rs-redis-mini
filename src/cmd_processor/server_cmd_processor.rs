@@ -1,6 +1,5 @@
 use anyhow::bail;
 use async_recursion::async_recursion;
-use std::collections::{HashMap, VecDeque};
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
@@ -13,7 +12,6 @@ use tokio::{
 use tracing::debug;
 
 use crate::database::db_event::DbValueType;
-use crate::server::Server;
 use crate::{
     app_config::AppConfig,
     cmd_parser::server_command::ServerCommand,
@@ -149,19 +147,6 @@ impl ServerCommand {
             }
         };
         Ok(Some(resp))
-    }
-    pub async fn add_key_for_incr_if_not_exist(&self) {
-        let Incr { key } = self else {
-            return;
-        };
-        match Database::get(&key).await.unwrap() {
-            None => {
-                Database::set(key, &"0".to_string(), &HashMap::new())
-                    .await
-                    .unwrap();
-            }
-            _ => {}
-        }
     }
 
     async fn process_multi_cmd(

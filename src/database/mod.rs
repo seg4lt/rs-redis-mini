@@ -1,5 +1,4 @@
 use crate::fdbg;
-use std::num::ParseIntError;
 use std::{
     collections::HashMap,
     sync::OnceLock,
@@ -450,16 +449,6 @@ impl Database {
             )),
         }
 
-        // match value.parse::<i64>() {
-        //     Ok(v) => {
-        //         let v = v + 1;
-        //         self._set(key, v.to_string(), None); // setting flag to None, probably shouldn't do this
-        //         Ok(v)
-        //     }
-        //     Err(_) => Err(DbError::UnableToPerformAction(
-        //         "ERR value is not an integer or out of range".to_string(),
-        //     )),
-        // }
     }
 
     fn _get(&mut self, key: &String) -> Option<DbValueType> {

@@ -8,8 +8,6 @@ use tokio::{
 use tracing::debug;
 
 use crate::cmd_processor::server_cmd_processor::send_rds_file;
-use crate::database::db_event::DatabaseEvent;
-use crate::database::db_event::DatabaseEvent::Set;
 use crate::{
     app_config::AppConfig, cmd_parser::server_command::ServerCommand, fdbg,
     replication::ReplicationEvent, resp_type::RESPType,

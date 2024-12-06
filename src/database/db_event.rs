@@ -75,9 +75,6 @@ pub struct StreamDbValueType {
 
 #[derive(Error, Debug, Clone)]
 pub enum DbError {
-    #[error("{0}: unknown error")]
-    Unknown(String),
-
     #[error("{0}")]
     UnableToPerformAction(String),
 }
