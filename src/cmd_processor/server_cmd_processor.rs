@@ -25,22 +25,14 @@ use ServerCommand::*;
 impl ServerCommand {
     pub async fn process_client_cmd(
         &self,
-        writer: &mut WriteHalf<'_>,
         tx_stack: &mut Vec<Vec<ServerCommand>>,
-    ) -> anyhow::Result<()> {
-        match self {
-            Ping => {
-                let resp_type = RESPType::SimpleString("PONG".to_string());
-                writer.write_all(&resp_type.as_bytes()).await?;
-            }
-            Echo(value) => {
-                let resp_type = RESPType::BulkString(value.clone());
-                writer.write_all(&resp_type.as_bytes()).await?;
-            }
+    ) -> anyhow::Result<Option<RESPType>> {
+        let resp = match self {
+            Ping => RESPType::SimpleString("PONG".to_string()),
+            Echo(value) => RESPType::BulkString(value.clone()),
             Set { key, value, flags } => {
                 Database::set(key, value, flags).await?;
                 let resp_type = RESPType::SimpleString("OK".to_string());
-                writer.write_all(&resp_type.as_bytes()).await?;
                 ReplicationEvent::Set {
                     key: key.to_string(),
                     value: value.clone(),
@@ -48,25 +40,26 @@ impl ServerCommand {
                 }
                 .emit()
                 .await?;
+                resp_type
             }
             Get { key } => match Database::get(&key).await? {
                 None => {
                     let resp_type = RESPType::NullBulkString;
-                    writer.write_all(&resp_type.as_bytes()).await?;
+                    resp_type
                 }
                 Some(value) => {
                     let resp_type = RESPType::BulkString(value);
-                    writer.write_all(&resp_type.as_bytes()).await?;
+                    resp_type
                 }
             },
             Incr { key } => match Database::incr(&key).await {
                 Ok(value) => {
                     let resp_type = RESPType::Integer(value);
-                    writer.write_all(&resp_type.as_bytes()).await?;
+                    resp_type
                 }
                 Err(e) => {
                     let resp_type = RESPType::Error(e.to_string());
-                    writer.write_all(&resp_type.as_bytes()).await?;
+                    resp_type
                 }
             },
             Info { .. } => {
@@ -84,22 +77,20 @@ impl ServerCommand {
                     ));
                 }
                 let info_string = RESPType::BulkString(info_vec.join(LINE_ENDING));
-                writer.write_all(&info_string.as_bytes()).await?;
+                info_string
             }
             ReplConf { .. } => {
                 let resp_type = RESPType::SimpleString("OK".to_string());
-                writer.write_all(&resp_type.as_bytes()).await?;
+                resp_type
             }
             PSync { .. } => {
                 let replid = AppConfig::get_master_replid();
                 let offset = AppConfig::get_master_repl_offset();
                 let content = format!("+FULLRESYNC {replid} {offset}");
                 let resp_type = RESPType::SimpleString(content);
-                writer.write_all(&resp_type.as_bytes()).await?;
-                writer.flush().await?;
-                send_rds_file(writer).await?;
+                resp_type
             }
-            Wait { .. } => self.process_wait_cmd(writer).await?,
+            Wait { .. } => self.process_wait_cmd().await?,
             Config { cmd, key } => {
                 let cmd = cmd.to_lowercase();
                 if cmd != "get" {
@@ -111,14 +102,14 @@ impl ServerCommand {
                             RESPType::BulkString("dir".to_string()),
                             RESPType::BulkString(AppConfig::get_rds_dir().to_string()),
                         ]);
-                        writer.write_all(&resp_type.as_bytes()).await?;
+                        resp_type
                     }
                     "dbfilename" => {
                         let resp_type = RESPType::Array(vec![
                             RESPType::BulkString("dbfilename".to_string()),
                             RESPType::BulkString(AppConfig::get_rds_file_name().to_string()),
                         ]);
-                        writer.write_all(&resp_type.as_bytes()).await?;
+                        resp_type
                     }
                     _ => bail!("CONFIG key not supported yet"),
                 }
@@ -130,14 +121,12 @@ impl ServerCommand {
                     .map(|key| RESPType::BulkString(key.to_owned()))
                     .collect();
                 let resp = RESPType::Array(value);
-                writer.write_all(&resp.as_bytes()).await?;
-                writer.flush().await?;
+                resp
             }
             Type(key) => {
                 let value = Database::get_type(key).await?;
                 let resp = RESPType::SimpleString(value);
-                writer.write_all(&resp.as_bytes()).await?;
-                writer.flush().await?;
+                resp
             }
             XAdd {
                 stream_key,
@@ -149,32 +138,31 @@ impl ServerCommand {
                     Ok(value) => RESPType::BulkString(value),
                     Err(err) => RESPType::Error(err),
                 };
-                writer.write_all(&resp.as_bytes()).await?;
-                writer.flush().await?;
+                resp
             }
-            XRange { .. } => self.process_xrange_cmd(writer).await?,
-            XRead { .. } => self.process_xread_cmd(writer).await?,
-            Multi => self.process_multi_cmd(writer).await?,
+            XRange { .. } => self.process_xrange_cmd().await?,
+            XRead { .. } => self.process_xread_cmd().await?,
+            Multi => self.process_multi_cmd().await?,
             Exec => {
                 if tx_stack.is_empty() {
                     let resp = RESPType::Error("ERR EXEC without MULTI".to_string());
-                    writer.write_all(&resp.as_bytes()).await?;
-                    writer.flush().await?;
+                    return Ok(Some(resp));
                 }
+                unimplemented!()
             }
-            CustomNewLine | ExitConn => {}
+            CustomNewLine | ExitConn => {
+                return Ok(None);
+            }
         };
-        Ok(())
+        Ok(Some(resp))
     }
 
-    async fn process_multi_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+    async fn process_multi_cmd(&self) -> anyhow::Result<RESPType> {
         let resp = RESPType::SimpleString("OK".to_string());
-        writer.write_all(&resp.as_bytes()).await?;
-        writer.flush().await?;
-        Ok(())
+        Ok(resp)
     }
 
-    async fn process_xread_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+    async fn process_xread_cmd(&self) -> anyhow::Result<RESPType> {
         let XRead(filters, block_ms) = self else {
             bail!("Not a xread cmd");
         };
@@ -199,19 +187,13 @@ impl ServerCommand {
         debug!(?updated_filters, "Updated filters");
 
         let resp = match block_ms {
-            None => self
-                .internal_process_xread_cmd(&updated_filters)
-                .await
-                .unwrap(),
+            None => self.internal_process_xread_cmd(&updated_filters).await?,
             Some(ms) => match ms {
                 0 => {
                     let mut resp = RESPType::NullBulkString;
                     while let RESPType::NullBulkString = resp {
                         tokio::time::sleep(Duration::from_millis(1000)).await;
-                        resp = self
-                            .internal_process_xread_cmd(&updated_filters)
-                            .await
-                            .unwrap()
+                        resp = self.internal_process_xread_cmd(&updated_filters).await?
                     }
                     resp
                 }
@@ -219,18 +201,14 @@ impl ServerCommand {
                     debug!(?ms, "Blocking for ms");
                     tokio::time::sleep(Duration::from_millis(*ms)).await;
                     debug!(?ms, "Blocking for ms finished");
-                    self.internal_process_xread_cmd(&updated_filters)
-                        .await
-                        .unwrap()
+                    self.internal_process_xread_cmd(&updated_filters).await?
                 }
             },
         };
         debug!("Final response: {:?}", resp);
-        let str = String::from_utf8(resp.as_bytes()).unwrap();
+        let str = String::from_utf8(resp.as_bytes())?;
         debug!(?str, "Final String");
-        writer.write_all(&resp.as_bytes()).await?;
-        writer.flush().await?;
-        Ok(())
+        Ok(resp)
     }
 
     async fn internal_process_xread_cmd(
@@ -273,7 +251,7 @@ impl ServerCommand {
         Ok(resp)
     }
 
-    async fn process_xrange_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+    async fn process_xrange_cmd(&self) -> anyhow::Result<RESPType> {
         let XRange {
             stream_key,
             start,
@@ -303,12 +281,10 @@ impl ServerCommand {
         });
         let final_resp = RESPType::Array(outer_vec);
         debug!("Final response: {:?}", final_resp);
-        writer.write_all(&final_resp.as_bytes()).await?;
-        writer.flush().await?;
-        Ok(())
+        Ok(final_resp)
     }
 
-    async fn process_wait_cmd(&self, writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+    async fn process_wait_cmd(&self) -> anyhow::Result<RESPType> {
         let Wait {
             ack_wanted,
             timeout_ms,
@@ -327,14 +303,12 @@ impl ServerCommand {
 
         if num_replicas == 0 {
             let resp_type = RESPType::Integer(num_replicas as i64);
-            writer.write_all(&resp_type.as_bytes()).await?;
-            return Ok(());
+            return Ok(resp_type);
         }
         let was_last_command_set = Database::was_last_command_set().await?;
         if was_last_command_set == false {
             let resp_type = RESPType::Integer(num_replicas as i64);
-            writer.write_all(&resp_type.as_bytes()).await?;
-            return Ok(());
+            return Ok(resp_type);
         }
 
         let (replication_event_resp_emitter, mut replication_event_resp_listener) =
@@ -371,12 +345,11 @@ impl ServerCommand {
         debug!(?elapshed, ?acks_received, ?num_replicas, "Acks received");
         let resp_type = RESPType::Integer(acks_received as i64);
         debug!("Final response: {:?}", resp_type);
-        writer.write_all(&resp_type.as_bytes()).await?;
-        Ok(())
+        Ok(resp_type)
     }
 }
 
-async fn send_rds_file(writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
+pub async fn send_rds_file(writer: &mut WriteHalf<'_>) -> anyhow::Result<()> {
     use base64::prelude::*;
     let rds_content = b"UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
     let decoded = BASE64_STANDARD.decode(rds_content)?;

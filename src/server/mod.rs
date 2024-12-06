@@ -7,6 +7,7 @@ use tokio::{
 };
 use tracing::debug;
 
+use crate::cmd_processor::server_cmd_processor::send_rds_file;
 use crate::database::db_event::DatabaseEvent;
 use crate::database::db_event::DatabaseEvent::Set;
 use crate::{
@@ -43,13 +44,18 @@ impl Server {
                     .context(fdbg!("unable to write queued string"))?;
                 continue;
             };
-            client_cmd
-                .process_client_cmd(&mut writer, &mut tx_stack)
+            if let Some(resp) = client_cmd
+                .process_client_cmd(&mut tx_stack)
                 .await
-                .context(fdbg!("Unable to write to client stream"))?;
-            writer.flush().await?;
+                .context(fdbg!("Unable to write to client stream"))?
+            {
+                writer.write_all(&resp.as_bytes()).await?;
+                writer.flush().await?;
+            }
+
             match client_cmd {
                 ServerCommand::PSync { .. } => {
+                    send_rds_file(&mut writer).await?;
                     let (host, port) = (addr.ip().to_string(), addr.port());
                     ReplicationEvent::SaveStream { host, port, stream }
                         .emit()
