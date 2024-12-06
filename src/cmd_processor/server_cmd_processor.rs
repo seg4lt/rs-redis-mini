@@ -12,6 +12,7 @@ use tokio::{
 };
 use tracing::debug;
 
+use crate::database::db_event::DbValueType;
 use crate::server::Server;
 use crate::{
     app_config::AppConfig,
@@ -49,16 +50,24 @@ impl ServerCommand {
                     let resp_type = RESPType::NullBulkString;
                     resp_type
                 }
-                Some(value) => {
-                    let resp_type = RESPType::BulkString(value);
-                    resp_type
-                }
+                Some(value) => match value {
+                    DbValueType::Integer(value) => {
+                        let resp_type = RESPType::BulkString(value.to_string());
+                        resp_type
+                    }
+                    DbValueType::String(value) => {
+                        let resp_type = RESPType::BulkString(value);
+                        resp_type
+                    }
+                    DbValueType::Stream(_) => unimplemented!("streams not supported via GET"),
+                },
             },
             Incr { key } => match Database::incr(&key).await {
-                Ok(value) => {
-                    let resp_type = RESPType::Integer(value);
-                    resp_type
-                }
+                Ok(value) => match value {
+                    DbValueType::Integer(i) => RESPType::Integer(i),
+                    DbValueType::String(s) => RESPType::BulkString(s),
+                    DbValueType::Stream(_) => unimplemented!("stream incr not supported"),
+                },
                 Err(e) => {
                     let resp_type = RESPType::Error(e.to_string());
                     resp_type

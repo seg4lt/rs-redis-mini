@@ -84,7 +84,7 @@ fn queue_if_transaction_active(
         return Some(cmd);
     }
     match cmd {
-        Set { .. } => {
+        Set { .. } | Incr { .. } => {
             tx_stack.last_mut().unwrap().push(cmd);
             None
         }

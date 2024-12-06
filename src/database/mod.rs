@@ -1,10 +1,10 @@
+use crate::fdbg;
+use std::num::ParseIntError;
 use std::{
     collections::HashMap,
     sync::OnceLock,
     time::{Duration, Instant, SystemTime},
 };
-
-use crate::fdbg;
 
 use self::db_event::DatabaseEvent::*;
 use self::db_event::{DatabaseEvent, DatabaseValue, DbValueType, StreamDbValueType};
@@ -51,8 +51,8 @@ impl Database {
         Database::emit(set_event).await
     }
 
-    pub async fn get(key: &String) -> anyhow::Result<Option<String>> {
-        let (resp_emitter, listener) = oneshot::channel::<Option<String>>();
+    pub async fn get(key: &String) -> anyhow::Result<Option<DbValueType>> {
+        let (resp_emitter, listener) = oneshot::channel::<Option<DbValueType>>();
         let kv_cmd = Get {
             emitter: resp_emitter,
             key: key.to_owned(),
@@ -61,8 +61,8 @@ impl Database {
         Ok(listener.await?)
     }
 
-    pub async fn incr(key: &String) -> anyhow::Result<i64> {
-        let (resp_emitter, listener) = oneshot::channel::<Result<i64, String>>();
+    pub async fn incr(key: &String) -> anyhow::Result<DbValueType> {
+        let (resp_emitter, listener) = oneshot::channel::<Result<DbValueType, String>>();
         let kv_cmd = Incr {
             emitter: resp_emitter,
             key: key.to_owned(),
@@ -170,6 +170,10 @@ impl Database {
         while let Some(cmd) = receiver.recv().await {
             match cmd {
                 Set { key, value, flags } => {
+                    let value = match value.parse::<i64>() {
+                        Ok(i) => DbValueType::Integer(i),
+                        Err(_) => DbValueType::String(value),
+                    };
                     db._set(&key, value, Some(&flags));
                     // TODO: Better way to set this command
                     last_command_was_set = true;
@@ -373,7 +377,7 @@ impl Database {
         Ok(format!("{ms_part}-{seq_part}"))
     }
 
-    fn _set(&mut self, key: &String, value: String, flags: Option<&HashMap<String, String>>) {
+    fn _set(&mut self, key: &String, value: DbValueType, flags: Option<&HashMap<String, String>>) {
         info!("Setting key: {key} with value: {value:?}");
         let exp_time = match flags {
             None => None,
@@ -383,13 +387,7 @@ impl Database {
         };
         let value = value.to_owned();
         let key = key.to_owned();
-        self.db.insert(
-            key,
-            DatabaseValue {
-                value: DbValueType::String(value),
-                exp_time,
-            },
-        );
+        self.db.insert(key, DatabaseValue { value, exp_time });
     }
 
     fn _get_type(&mut self, key: &String) -> &str {
@@ -398,6 +396,7 @@ impl Database {
             None => "none",
             Some(kv) => match kv.value {
                 DbValueType::String(_) => "string",
+                DbValueType::Integer(_) => "integer",
                 DbValueType::Stream(_) => "stream",
             },
         }
@@ -417,31 +416,53 @@ impl Database {
         };
         stream_id
     }
-    fn _incr(&mut self, key: &String) -> Result<i64, DbError> {
+    fn _incr(&mut self, key: &String) -> Result<DbValueType, DbError> {
         let value = self._get(key);
         let Some(value) = value else {
             self.db.insert(
                 key.to_owned(),
                 DatabaseValue {
-                    value: DbValueType::String("1".to_owned()),
+                    value: DbValueType::Integer(1),
                     exp_time: None,
                 },
             );
-            return Ok(1);
+            return Ok(DbValueType::Integer(1));
         };
-        match value.parse::<i64>() {
-            Ok(v) => {
+
+        match value {
+            DbValueType::Integer(v) => {
                 let v = v + 1;
-                self._set(key, v.to_string(), None); // setting flag to None, probably shouldn't do this
-                Ok(v)
+                self._set(key, DbValueType::Integer(v), None); // setting flag to None, probably shouldn't do this
+                Ok(DbValueType::Integer(v))
             }
-            Err(_) => Err(DbError::UnableToPerformAction(
+            DbValueType::String(v) => match v.parse::<i64>() {
+                Ok(v) => {
+                    let v = v + 1;
+                    self._set(key, DbValueType::String(v.to_string()), None); // setting flag to None, probably shouldn't do this
+                    Ok(DbValueType::String(v.to_string()))
+                }
+                Err(_) => Err(DbError::UnableToPerformAction(
+                    "ERR value is not an integer or out of range".to_string(),
+                )),
+            },
+            DbValueType::Stream(_) => Err(DbError::UnableToPerformAction(
                 "ERR value is not an integer or out of range".to_string(),
             )),
         }
+
+        // match value.parse::<i64>() {
+        //     Ok(v) => {
+        //         let v = v + 1;
+        //         self._set(key, v.to_string(), None); // setting flag to None, probably shouldn't do this
+        //         Ok(v)
+        //     }
+        //     Err(_) => Err(DbError::UnableToPerformAction(
+        //         "ERR value is not an integer or out of range".to_string(),
+        //     )),
+        // }
     }
 
-    fn _get(&mut self, key: &String) -> Option<String> {
+    fn _get(&mut self, key: &String) -> Option<DbValueType> {
         info!("Getting value for key: {}", key);
         let value = self.db.get(key);
         let Some(db_value) = value else {
@@ -449,7 +470,8 @@ impl Database {
         };
         let value = match &db_value.value {
             DbValueType::Stream(..) => unimplemented!("GET not supported for streams"),
-            DbValueType::String(e) => e.clone(),
+            e => e.clone(),
+            // DbValueType::String(e) => e.clone(),
         };
         let Some(exp_time) = db_value.exp_time else {
             return Some(value);

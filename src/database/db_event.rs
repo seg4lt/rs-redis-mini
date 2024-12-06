@@ -11,11 +11,11 @@ pub enum DatabaseEvent {
         flags: HashMap<String, String>,
     },
     Get {
-        emitter: Sender<Option<String>>,
+        emitter: Sender<Option<DbValueType>>,
         key: String,
     },
     Incr {
-        emitter: Sender<Result<i64, String>>,
+        emitter: Sender<Result<DbValueType, String>>,
         key: String,
     },
     Keys {
@@ -60,6 +60,7 @@ pub struct DatabaseValue {
 
 #[derive(Clone, Debug)]
 pub enum DbValueType {
+    Integer(i64),
     String(String),
     Stream(Vec<StreamDbValueType>),
 }
